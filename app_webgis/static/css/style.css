@@ -1,0 +1,20 @@
+body {
+    background-color: #f8f9fa;
+}
+
+#map {
+    height: 75vh;
+    width: 100%;
+}
+
+.card-header {
+    font-weight: bold;
+}
+
+.leaflet-popup-content-wrapper {
+    border-radius: 4px;
+}
+
+.leaflet-popup-content table {
+    font-size: 12px;
+}

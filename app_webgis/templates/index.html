@@ -1,0 +1,149 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="row">
+    <!-- Sidebar: Controle de Camadas e Upload -->
+    <div class="col-md-3">
+        <div class="card mb-3 shadow-sm">
+            <div class="card-header bg-success text-white">
+                <h5 class="mb-0">Controle de Camadas</h5>
+            </div>
+            <div class="card-body" id="layer-list" style="max-height: 400px; overflow-y: auto;">
+                <div class="spinner-border text-primary" role="status" id="layer-spinner">
+                    <span class="visually-hidden">Carregando...</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="card shadow-sm">
+            <div class="card-header bg-secondary text-white">
+                <h5 class="mb-0">Enviar Novos Dados</h5>
+            </div>
+            <div class="card-body p-2">
+                <ul class="nav nav-tabs nav-fill mb-3" id="uploadTabs" role="tablist">
+                    {% if current_user.role in ['admin', 'org'] %}
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active" id="layer-tab" data-bs-toggle="tab" data-bs-target="#layer" type="button" role="tab" aria-controls="layer" aria-selected="true">Camada</button>
+                    </li>
+                    {% endif %}
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link {% if current_user.role not in ['admin', 'org'] %}active{% endif %}" id="point-tab" data-bs-toggle="tab" data-bs-target="#point" type="button" role="tab" aria-controls="point" aria-selected="{% if current_user.role not in ['admin', 'org'] %}true{% else %}false{% endif %}">Ocorrência (Ponto)</button>
+                    </li>
+                </ul>
+                <div class="tab-content" id="uploadTabsContent">
+                    {% if current_user.role in ['admin', 'org'] %}
+                    <!-- Tab Camada -->
+                    <div class="tab-pane fade show active" id="layer" role="tabpanel" aria-labelledby="layer-tab">
+                        <form action="{{ url_for('upload_file') }}" method="POST" enctype="multipart/form-data">
+                            <div class="mb-2">
+                                <label class="form-label">Título da Camada</label>
+                                <input type="text" name="title" class="form-control form-control-sm" required>
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label">Descrição (Opcional)</label>
+                                <textarea name="description" class="form-control form-control-sm" rows="2"></textarea>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Arquivo GeoJSON (.geojson)</label>
+                                <input type="file" name="file" class="form-control form-control-sm" accept=".geojson" required>
+                            </div>
+                            <button type="submit" class="btn btn-secondary btn-sm w-100">Enviar para Curadoria</button>
+                        </form>
+                    </div>
+                    {% endif %}
+                    <!-- Tab Ponto / Ocorrência -->
+                    <div class="tab-pane fade {% if current_user.role not in ['admin', 'org'] %}show active{% endif %}" id="point" role="tabpanel" aria-labelledby="point-tab">
+                        <form action="{{ url_for('upload_point') }}" method="POST" enctype="multipart/form-data">
+                            <div class="mb-2">
+                                <label class="form-label">Título da Ocorrência</label>
+                                <input type="text" name="title" class="form-control form-control-sm" required>
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label">Data do Evento</label>
+                                <input type="date" name="data_evento" class="form-control form-control-sm">
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label">Descrição (Opcional)</label>
+                                <textarea name="description" class="form-control form-control-sm" rows="2"></textarea>
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label">Mídia (Foto/Vídeo - Opcional)</label>
+                                <input type="file" name="media_file" class="form-control form-control-sm" accept="image/*,video/*">
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label">Coordenadas (WGS84)</label>
+                                <div class="input-group input-group-sm mb-2">
+                                    <input type="text" id="lat" name="lat" class="form-control" placeholder="Lat (-23.00)" required>
+                                    <input type="text" id="lng" name="lng" class="form-control" placeholder="Lng (-44.31)" required>
+                                </div>
+                                <button type="button" class="btn btn-outline-info btn-sm w-100" onclick="getLocation()">📌 Capturar Minha Localização</button>
+                            </div>
+                            <button type="submit" class="btn btn-info btn-sm w-100 mt-2">Enviar Ocorrência</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Download de Camadas e Ocorrências -->
+        <div class="card mt-3 shadow-sm">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">📥 Baixar Dados Spatial</h5>
+            </div>
+            <div class="card-body">
+                <form action="{{ url_for('download_export') }}" method="GET">
+                    <div class="mb-2">
+                        <label class="form-label">Camada / Dados</label>
+                        <select name="layer_type" class="form-select form-select-sm">
+                            <option value="occurrences">Pontos de Deslizamento Registrados (Ocorrências)</option>
+                            {% for l in layers %}
+                            <option value="{{ l.id }}">{{ l.name }} ({{ l.category }})</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">Filtrar Município</label>
+                        <select name="municipio" class="form-select form-select-sm">
+                            <option value="Todos">Todos os Municípios</option>
+                            <option value="Angra dos Reis" selected>Angra dos Reis</option>
+                            <option value="Paraty">Paraty</option>
+                            <option value="Mangaratiba">Mangaratiba</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Formato do Arquivo</label>
+                        <select name="format" class="form-select form-select-sm">
+                            <option value="shapefile">Shapefile (.zip)</option>
+                            <option value="geopackage">GeoPackage (.gpkg)</option>
+                            <option value="geojson">GeoJSON (.geojson)</option>
+                        </select>
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-sm w-100">Baixar Arquivo</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Mapa -->
+    <div class="col-md-9">
+        <div id="map" class="shadow-sm border rounded"></div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function getLocation() {
+    if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(function(position) {
+            document.getElementById('lat').value = position.coords.latitude;
+            document.getElementById('lng').value = position.coords.longitude;
+        }, function(error) {
+            alert("Erro ao obter localização: " + error.message);
+        });
+    } else {
+        alert("Geolocalização não é suportada por este navegador.");
+    }
+}
+</script>
+<script src="{{ url_for('static', filename='js/map.js') }}"></script>
+{% endblock %}

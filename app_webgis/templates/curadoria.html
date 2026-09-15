@@ -1,0 +1,330 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <h2 class="mb-4">Painel de Curadoria</h2>
+        <div class="card shadow-sm">
+            <div class="card-header bg-dark text-white">
+                <h5 class="mb-0">Envios Pendentes</h5>
+            </div>
+            <div class="card-body">
+                <table class="table table-hover align-middle">
+                    <thead>
+                        <tr>
+                            <th>Data</th>
+                            <th>Usuário</th>
+                            <th>Tipo</th>
+                            <th>Título</th>
+                            <th>Arquivo/Mídia</th>
+                            <th>Status</th>
+                            <th>Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for sub in submissions %}
+                        <tr>
+                            <td>{{ sub.timestamp }}</td>
+                            <td>{{ sub.username }}</td>
+                            <td>
+                                {% if sub.submission_type == 'point' %}
+                                    <span class="badge bg-info">Ponto</span><br>
+                                    <small>{{ sub.lat }}, {{ sub.lng }}</small>
+                                {% else %}
+                                    <span class="badge bg-secondary">Camada</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ sub.title }}</td>
+                            <td>
+                                {% if sub.submission_type == 'point' and sub.media_filename %}
+                                    <a href="{{ url_for('serve_layer', filename=sub.media_filename) }}" target="_blank" class="btn btn-sm btn-outline-secondary mb-1">Ver Mídia</a>
+                                {% else %}
+                                    <a href="{{ url_for('serve_layer', filename=sub.filename) }}" target="_blank" class="btn btn-sm btn-outline-secondary mb-1">Baixar</a>
+                                {% endif %}
+                                {% if sub.lat and sub.lng %}
+                                    <br>
+                                    <button class="btn btn-sm btn-outline-primary" onclick="showOnMap({{ sub.lat }}, {{ sub.lng }}, '{{ sub.title }}', '{% if sub.media_filename %}{{ url_for('serve_layer', filename=sub.media_filename) }}{% endif %}')">🗺️ Ver no Mapa</button>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if sub.status == 'pendente' %}
+                                    <span class="badge bg-warning text-dark">Pendente</span>
+                                {% elif sub.status == 'aprovado' %}
+                                    <span class="badge bg-success">Aprovado</span>
+                                {% else %}
+                                    <span class="badge bg-danger">Rejeitado</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if sub.status == 'pendente' %}
+                                <form action="{{ url_for('curadoria_action', sub_id=sub.id) }}" method="POST" class="d-inline">
+                                    <input type="hidden" name="action" value="approve">
+                                    <button type="submit" class="btn btn-sm btn-success">Aprovar</button>
+                                </form>
+                                <form action="{{ url_for('curadoria_action', sub_id=sub.id) }}" method="POST" class="d-inline mb-1">
+                                    <input type="hidden" name="action" value="reject">
+                                    <button type="submit" class="btn btn-sm btn-danger">Rejeitar</button>
+                                </form>
+                                <br>
+                                {% endif %}
+                                <button type="button" class="btn btn-sm btn-outline-warning mt-1" data-bs-toggle="modal" data-bs-target="#editModal_{{ sub.id }}">✏️ Editar Atributos</button>
+
+                                <!-- Modal Editar Atributos -->
+                                <div class="modal fade text-start" id="editModal_{{ sub.id }}" tabindex="-1" aria-labelledby="editModalLabel_{{ sub.id }}" aria-hidden="true">
+                                  <div class="modal-dialog modal-lg">
+                                    <div class="modal-content">
+                                      <form action="{{ url_for('curadoria_update', sub_id=sub.id) }}" method="POST">
+                                          <div class="modal-header bg-warning text-dark">
+                                            <h5 class="modal-title" id="editModalLabel_{{ sub.id }}">Editar Dados do Evento #{{ sub.id }}</h5>
+                                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                                          </div>
+                                          <div class="modal-body">
+                                            <!-- Nav Tabs Data Dictionary -->
+                                            <ul class="nav nav-tabs nav-fill mb-3" id="dictTabs_{{ sub.id }}" role="tablist">
+                                                <li class="nav-item"><button class="nav-link active py-1 px-2" id="t-geral-{{ sub.id }}" data-bs-toggle="tab" data-bs-target="#geral-{{ sub.id }}" type="button">📌 Geral</button></li>
+                                                <li class="nav-item"><button class="nav-link py-1 px-2" id="t-clima-{{ sub.id }}" data-bs-toggle="tab" data-bs-target="#clima-{{ sub.id }}" type="button">⛅ Clima</button></li>
+                                                <li class="nav-item"><button class="nav-link py-1 px-2" id="t-ped-{{ sub.id }}" data-bs-toggle="tab" data-bs-target="#ped-{{ sub.id }}" type="button">🏜️ Pedologia</button></li>
+                                                <li class="nav-item"><button class="nav-link py-1 px-2" id="t-geo-{{ sub.id }}" data-bs-toggle="tab" data-bs-target="#geo-{{ sub.id }}" type="button">⛰️ Geo/Geol</button></li>
+                                                <li class="nav-item"><button class="nav-link py-1 px-2" id="t-ant-{{ sub.id }}" data-bs-toggle="tab" data-bs-target="#ant-{{ sub.id }}" type="button">🚜 Antrópico</button></li>
+                                                <li class="nav-item"><button class="nav-link py-1 px-2" id="t-econ-{{ sub.id }}" data-bs-toggle="tab" data-bs-target="#econ-{{ sub.id }}" type="button">💰 Econômico</button></li>
+                                                <li class="nav-item"><button class="nav-link py-1 px-2" id="t-soc-{{ sub.id }}" data-bs-toggle="tab" data-bs-target="#soc-{{ sub.id }}" type="button">👥 Social/Amb</button></li>
+                                                <li class="nav-item"><button class="nav-link py-1 px-2" id="t-mid-{{ sub.id }}" data-bs-toggle="tab" data-bs-target="#mid-{{ sub.id }}" type="button">📹 Mídia</button></li>
+                                            </ul>
+                                            <div class="tab-content" id="dictTabsContent_{{ sub.id }}">
+                                                <!-- Tab Geral -->
+                                                <div class="tab-pane fade show active" id="geral-{{ sub.id }}">
+                                                    <div class="row">
+                                                        <div class="col-md-6 mb-2"><label class="form-label fw-bold">Título do Evento</label><input type="text" name="title" class="form-control form-control-sm" value="{{ sub.title }}" required></div>
+                                                        <div class="col-md-6 mb-2"><label class="form-label fw-bold">Tipologia</label>
+                                                            <select name="tipologia" class="form-select form-select-sm">
+                                                                <option value="Deslizamento de Terra" {% if sub.tipologia == 'Deslizamento de Terra' %}selected{% endif %}>Deslizamento de Terra</option>
+                                                                <option value="Inundação" {% if sub.tipologia == 'Inundação' %}selected{% endif %}>Inundação</option>
+                                                                <option value="Enxurrada" {% if sub.tipologia == 'Enxurrada' %}selected{% endif %}>Enxurrada</option>
+                                                                <option value="Alagamento" {% if sub.tipologia == 'Alagamento' %}selected{% endif %}>Alagamento</option>
+                                                                <option value="Incêndio" {% if sub.tipologia == 'Incêndio' %}selected{% endif %}>Incêndio</option>
+                                                                <option value="Outro" {% if sub.tipologia == 'Outro' %}selected{% endif %}>Outro</option>
+                                                            </select>
+                                                        </div>
+                                                        <div class="col-md-3 mb-2"><label class="form-label fw-bold">Data Evento</label><input type="date" name="data_evento" class="form-control form-control-sm" value="{{ sub.data_evento or '' }}"></div>
+                                                        <div class="col-md-3 mb-2"><label class="form-label fw-bold">ID País</label><input type="text" name="id_pais" class="form-control form-control-sm" value="{{ sub.id_pais or 'Brasil' }}"></div>
+                                                        <div class="col-md-3 mb-2"><label class="form-label fw-bold">ID UF</label><input type="text" name="uf" class="form-control form-control-sm" value="{{ sub.uf or 'RJ' }}"></div>
+                                                        <div class="col-md-3 mb-2"><label class="form-label fw-bold">ID Município</label><input type="text" name="municipio" class="form-control form-control-sm" value="{{ sub.municipio or 'Angra dos Reis' }}"></div>
+                                                        <div class="col-md-4 mb-2"><label class="form-label fw-bold">Bairro</label><input type="text" name="bairro" class="form-control form-control-sm" value="{{ sub.bairro or '' }}"></div>
+                                                        <div class="col-md-4 mb-2"><label class="form-label fw-bold">Coordenada Y (Lat)</label><input type="text" name="lat" class="form-control form-control-sm" value="{{ sub.lat or '' }}"></div>
+                                                        <div class="col-md-4 mb-2"><label class="form-label fw-bold">Coordenada X (Lng)</label><input type="text" name="lng" class="form-control form-control-sm" value="{{ sub.lng or '' }}"></div>
+                                                        <div class="col-md-3 mb-2"><label class="form-label fw-bold">Zona</label>
+                                                            <select name="zona" class="form-select form-select-sm">
+                                                                <option value="Urbana" {% if sub.zona == 'Urbana' %}selected{% endif %}>Urbana</option>
+                                                                <option value="Rural" {% if sub.zona == 'Rural' %}selected{% endif %}>Rural</option>
+                                                            </select>
+                                                        </div>
+                                                        <div class="col-md-3 mb-2"><label class="form-label fw-bold">Área U. Habitações</label><input type="text" name="area_u_habitacoes" class="form-control form-control-sm" value="{{ sub.area_u_habitacoes or '' }}"></div>
+                                                        <div class="col-md-3 mb-2"><label class="form-label fw-bold">% Área Urbana (ATU)</label><input type="text" name="perc_area_atu" class="form-control form-control-sm" value="{{ sub.perc_area_atu or '' }}"></div>
+                                                        <div class="col-md-3 mb-2"><label class="form-label fw-bold">% Área Agrícola (ATR)</label><input type="text" name="perc_area_atr" class="form-control form-control-sm" value="{{ sub.perc_area_atr or '' }}"></div>
+                                                    </div>
+                                                </div>
+
+                                                <!-- Tab Clima -->
+                                                <div class="tab-pane fade" id="clima-{{ sub.id }}">
+                                                    <div class="row">
+                                                        <div class="col-md-3 mb-2"><label class="form-label fw-bold">Vento (m/s)</label><input type="text" name="clima_vento" class="form-control form-control-sm" value="{{ sub.clima_vento or '' }}"></div>
+                                                        <div class="col-md-3 mb-2"><label class="form-label fw-bold">Precipitação Evento (mm)</label><input type="text" name="clima_precipitacao_evento" class="form-control form-control-sm" value="{{ sub.clima_precipitacao_evento or '' }}"></div>
+                                                        <div class="col-md-3 mb-2"><label class="form-label fw-bold">Pressão Atmosférica (atm)</label><input type="text" name="clima_pressao" class="form-control form-control-sm" value="{{ sub.clima_pressao or '' }}"></div>
+                                                        <div class="col-md-3 mb-2"><label class="form-label fw-bold">Temperatura (ºC)</label><input type="text" name="clima_temperatura" class="form-control form-control-sm" value="{{ sub.clima_temperatura or '' }}"></div>
+                                                        <div class="col-md-4 mb-2"><label class="form-label fw-bold">Evapotranspiração (mm FAO)</label><input type="text" name="clima_evapotranspiracao" class="form-control form-control-sm" value="{{ sub.clima_evapotranspiracao or '' }}"></div>
+                                                        <div class="col-md-4 mb-2"><label class="form-label fw-bold">Precipitação Mensal (mm)</label><input type="text" name="clima_precipitacao_mensal" class="form-control form-control-sm" value="{{ sub.clima_precipitacao_mensal or '' }}"></div>
+                                                        <div class="col-md-2 mb-2"><label class="form-label fw-bold">Precip. 5 dias (mm)</label><input type="text" name="clima_precipitacao_5d" class="form-control form-control-sm" value="{{ sub.clima_precipitacao_5d or '' }}"></div>
+                                                        <div class="col-md-2 mb-2"><label class="form-label fw-bold">Precip. 10 dias (mm)</label><input type="text" name="clima_precipitacao_10d" class="form-control form-control-sm" value="{{ sub.clima_precipitacao_10d or '' }}"></div>
+                                                    </div>
+                                                </div>
+
+                                                <!-- Tab Pedologia -->
+                                                <div class="tab-pane fade" id="ped-{{ sub.id }}">
+                                                    <div class="row">
+                                                        <div class="col-md-4 mb-2"><label class="form-label fw-bold">Classe de Solo</label><input type="text" name="ped_classe_solo" class="form-control form-control-sm" value="{{ sub.ped_classe_solo or '' }}" placeholder="Ex: Argiloso"></div>
+                                                        <div class="col-md-4 mb-2"><label class="form-label fw-bold">Profundidade (cm)</label><input type="text" name="ped_profundidade" class="form-control form-control-sm" value="{{ sub.ped_profundidade or '' }}"></div>
+                                                        <div class="col-md-4 mb-2"><label class="form-label fw-bold">Textura</label><input type="text" name="ped_textura" class="form-control form-control-sm" value="{{ sub.ped_textura or '' }}" placeholder="Areia, Silte, Argila"></div>
+                                                        <div class="col-md-3 mb-2"><label class="form-label fw-bold">Porosidade (%)</label><input type="text" name="ped_porosidade" class="form-control form-control-sm" value="{{ sub.ped_porosidade or '' }}"></div>
+                                                        <div class="col-md-3 mb-2"><label class="form-label fw-bold">Umidade Ucc (%)</label><input type="text" name="ped_ucc" class="form-control form-control-sm" value="{{ sub.ped_ucc or '' }}"></div>
+                                                        <div class="col-md-3 mb-2"><label class="form-label fw-bold">Conteúdo Água (CAD)</label><input type="text" name="ped_cad" class="form-control form-control-sm" value="{{ sub.ped_cad or '' }}"></div>
+                                                        <div class="col-md-3 mb-2"><label class="form-label fw-bold">Condutividade K</label><input type="text" name="ped_k" class="form-control form-control-sm" value="{{ sub.ped_k or '' }}"></div>
+                                                        <div class="col-md-6 mb-2"><label class="form-label fw-bold">Umidade no Momento do Evento</label><input type="text" name="ped_umidade_evento" class="form-control form-control-sm" value="{{ sub.ped_umidade_evento or '' }}"></div>
+                                                    </div>
+                                                </div>
+
+                                                <!-- Tab Geomorfologia / Geologia -->
+                                                <div class="tab-pane fade" id="geo-{{ sub.id }}">
+                                                    <div class="row">
+                                                        <div class="col-md-4 mb-2"><label class="form-label fw-bold">Orientação (º)</label><input type="text" name="geo_orientacao" class="form-control form-control-sm" value="{{ sub.geo_orientacao or '' }}"></div>
+                                                        <div class="col-md-4 mb-2"><label class="form-label fw-bold">Curvatura</label><input type="text" name="geo_curvatura" class="form-control form-control-sm" value="{{ sub.geo_curvatura or '' }}" placeholder="Côncavo / Convexo"></div>
+                                                        <div class="col-md-4 mb-2"><label class="form-label fw-bold">Forma do Terreno</label><input type="text" name="geo_forma_terreno" class="form-control form-control-sm" value="{{ sub.geo_forma_terreno or '' }}" placeholder="Vale, Colina, Encosta"></div>
+                                                        <div class="col-md-6 mb-2"><label class="form-label fw-bold">Declividade (%)</label><input type="text" name="geo_declividade" class="form-control form-control-sm" value="{{ sub.geo_declividade or '' }}"></div>
+                                                        <div class="col-md-6 mb-2"><label class="form-label fw-bold">Altitude (m)</label><input type="text" name="geo_altitude" class="form-control form-control-sm" value="{{ sub.geo_altitude or '' }}"></div>
+                                                        <hr class="my-2">
+                                                        <div class="col-md-4 mb-2"><label class="form-label fw-bold">Tipo de Rocha</label><input type="text" name="geol_tipo_rocha" class="form-control form-control-sm" value="{{ sub.geol_tipo_rocha or '' }}" placeholder="Ígnea, Metamórfica"></div>
+                                                        <div class="col-md-4 mb-2"><label class="form-label fw-bold">Composição Mineralógica</label><input type="text" name="geol_composicao" class="form-control form-control-sm" value="{{ sub.geol_composicao or '' }}"></div>
+                                                        <div class="col-md-4 mb-2"><label class="form-label fw-bold">Estrutura Geológica</label><input type="text" name="geol_estrutura" class="form-control form-control-sm" value="{{ sub.geol_estrutura or '' }}" placeholder="Fraturas, Dobramentos"></div>
+                                                        <div class="col-md-6 mb-2"><label class="form-label fw-bold">Idade Geológica</label><input type="text" name="geol_idade" class="form-control form-control-sm" value="{{ sub.geol_idade or '' }}"></div>
+                                                        <div class="col-md-6 mb-2"><label class="form-label fw-bold">Tectonismo Presente?</label>
+                                                            <select name="geol_tectonismo" class="form-select form-select-sm">
+                                                                <option value="Não" {% if sub.geol_tectonismo == 'Não' %}selected{% endif %}>Não</option>
+                                                                <option value="Sim" {% if sub.geol_tectonismo == 'Sim' %}selected{% endif %}>Sim</option>
+                                                            </select>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                <!-- Tab Antrópicos -->
+                                                <div class="tab-pane fade" id="ant-{{ sub.id }}">
+                                                    <div class="row">
+                                                        <div class="col-md-6 mb-2"><label class="form-label fw-bold">Escavação na Encosta?</label>
+                                                            <select name="antrop_escavacao" class="form-select form-select-sm">
+                                                                <option value="Não" {% if sub.antrop_escavacao == 'Não' %}selected{% endif %}>Não</option>
+                                                                <option value="Sim" {% if sub.antrop_escavacao == 'Sim' %}selected{% endif %}>Sim</option>
+                                                            </select>
+                                                        </div>
+                                                        <div class="col-md-6 mb-2"><label class="form-label fw-bold">Sobrecarga na Encosta?</label>
+                                                            <select name="antrop_sobrecarga" class="form-select form-select-sm">
+                                                                <option value="Não" {% if sub.antrop_sobrecarga == 'Não' %}selected{% endif %}>Não</option>
+                                                                <option value="Sim" {% if sub.antrop_sobrecarga == 'Sim' %}selected{% endif %}>Sim</option>
+                                                            </select>
+                                                        </div>
+                                                        <div class="col-md-6 mb-2"><label class="form-label fw-bold">Tipo de Uso do Solo</label><input type="text" name="antrop_tipo_uso" class="form-control form-control-sm" value="{{ sub.antrop_tipo_uso or '' }}"></div>
+                                                        <div class="col-md-6 mb-2"><label class="form-label fw-bold">Atividades de Mineração?</label>
+                                                            <select name="antrop_mineracao" class="form-select form-select-sm">
+                                                                <option value="Não" {% if sub.antrop_mineracao == 'Não' %}selected{% endif %}>Não</option>
+                                                                <option value="Sim" {% if sub.antrop_mineracao == 'Sim' %}selected{% endif %}>Sim</option>
+                                                            </select>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                <!-- Tab Econômico -->
+                                                <div class="tab-pane fade" id="econ-{{ sub.id }}">
+                                                    <div class="row">
+                                                        <div class="col-md-6 mb-2"><label class="form-label fw-bold">Custo Total dos Danos (R$)</label><input type="text" name="econ_custo_total" class="form-control form-control-sm" value="{{ sub.econ_custo_total or '' }}"></div>
+                                                        <div class="col-md-6 mb-2"><label class="form-label fw-bold">Custo de Recuperação (R$)</label><input type="text" name="econ_custo_recuperacao" class="form-control form-control-sm" value="{{ sub.econ_custo_recuperacao or '' }}"></div>
+                                                        <div class="col-md-6 mb-2"><label class="form-label fw-bold">Infraestrutura Atingida</label><input type="text" name="econ_infraestrutura" class="form-control form-control-sm" value="{{ sub.econ_infraestrutura or '' }}" placeholder="Estradas, Pontes, Redes"></div>
+                                                        <div class="col-md-6 mb-2"><label class="form-label fw-bold">Seguro Cobertura?</label>
+                                                            <select name="econ_seguro" class="form-select form-select-sm">
+                                                                <option value="Não" {% if sub.econ_seguro == 'Não' %}selected{% endif %}>Não</option>
+                                                                <option value="Sim" {% if sub.econ_seguro == 'Sim' %}selected{% endif %}>Sim</option>
+                                                            </select>
+                                                        </div>
+                                                        <div class="col-md-6 mb-2"><label class="form-label fw-bold">Patrimônio Privado Afetado</label><textarea name="econ_patrimonio_privado" class="form-control form-control-sm" rows="2">{{ sub.econ_patrimonio_privado or '' }}</textarea></div>
+                                                        <div class="col-md-6 mb-2"><label class="form-label fw-bold">Patrimônio Público Afetado</label><textarea name="econ_patrimonio_publico" class="form-control form-control-sm" rows="2">{{ sub.econ_patrimonio_publico or '' }}</textarea></div>
+                                                        <div class="col-md-6 mb-2"><label class="form-label fw-bold">Duração Interrupção (Dias)</label><input type="text" name="econ_interrupcao_duracao" class="form-control form-control-sm" value="{{ sub.econ_interrupcao_duracao or '' }}"></div>
+                                                        <div class="col-md-6 mb-2"><label class="form-label fw-bold">Setores Afetados</label><input type="text" name="econ_interrupcao_setores" class="form-control form-control-sm" value="{{ sub.econ_interrupcao_setores or '' }}" placeholder="Comércio, Turismo, etc"></div>
+                                                    </div>
+                                                </div>
+
+                                                <!-- Tab Social & Ambiental -->
+                                                <div class="tab-pane fade" id="soc-{{ sub.id }}">
+                                                    <div class="row">
+                                                        <div class="col-md-3 mb-2"><label class="form-label fw-bold">Nº Mortos</label><input type="number" name="n_mortos" class="form-control form-control-sm" value="{{ sub.n_mortos or 0 }}"></div>
+                                                        <div class="col-md-3 mb-2"><label class="form-label fw-bold">Nº Feridos</label><input type="number" name="n_feridos" class="form-control form-control-sm" value="{{ sub.n_feridos or 0 }}"></div>
+                                                        <div class="col-md-3 mb-2"><label class="form-label fw-bold">Nº Desaparecidos</label><input type="text" name="soc_n_desaparecidos" class="form-control form-control-sm" value="{{ sub.soc_n_desaparecidos or '' }}"></div>
+                                                        <div class="col-md-3 mb-2"><label class="form-label fw-bold">Nº Famílias Afetadas</label><input type="text" name="soc_n_familias" class="form-control form-control-sm" value="{{ sub.soc_n_familias or '' }}"></div>
+                                                        <div class="col-md-4 mb-2"><label class="form-label fw-bold">Nº Desalojados</label><input type="text" name="soc_n_desalojados" class="form-control form-control-sm" value="{{ sub.soc_n_desalojados or '' }}"></div>
+                                                        <div class="col-md-4 mb-2"><label class="form-label fw-bold">Nº Desabrigados</label><input type="text" name="soc_n_desabrigados" class="form-control form-control-sm" value="{{ sub.soc_n_desabrigados or '' }}"></div>
+                                                        <div class="col-md-4 mb-2"><label class="form-label fw-bold">Serviços Afetados</label><input type="text" name="soc_servicos_afetados" class="form-control form-control-sm" value="{{ sub.soc_servicos_afetados or '' }}" placeholder="Água, Luz, Telefone"></div>
+                                                        <hr class="my-2">
+                                                        <div class="col-md-4 mb-2"><label class="form-label fw-bold">Tipo Impacto Ambiental</label><input type="text" name="amb_tipo_impacto" class="form-control form-control-sm" value="{{ sub.amb_tipo_impacto or '' }}" placeholder="Erosão, Desmatamento"></div>
+                                                        <div class="col-md-4 mb-2"><label class="form-label fw-bold">Área Atingida (ha)</label><input type="text" name="amb_area_atingida" class="form-control form-control-sm" value="{{ sub.amb_area_atingida or '' }}"></div>
+                                                        <div class="col-md-4 mb-2"><label class="form-label fw-bold">Status Recuperação</label>
+                                                            <select name="amb_status_recuperacao" class="form-select form-select-sm">
+                                                                <option value="Não iniciado" {% if sub.amb_status_recuperacao == 'Não iniciado' %}selected{% endif %}>Não iniciado</option>
+                                                                <option value="Em andamento" {% if sub.amb_status_recuperacao == 'Em andamento' %}selected{% endif %}>Em andamento</option>
+                                                                <option value="Concluído" {% if sub.amb_status_recuperacao == 'Concluído' %}selected{% endif %}>Concluído</option>
+                                                            </select>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                <!-- Tab Mídia -->
+                                                <div class="tab-pane fade" id="mid-{{ sub.id }}">
+                                                    <div class="row">
+                                                        <div class="col-md-4 mb-2"><label class="form-label fw-bold">Tipo de Mídia</label><input type="text" name="midia_tipo" class="form-control form-control-sm" value="{{ sub.midia_tipo or '' }}" placeholder="Imagem, Vídeo, Notícia"></div>
+                                                        <div class="col-md-4 mb-2"><label class="form-label fw-bold">Fonte da Mídia</label><input type="text" name="midia_fonte" class="form-control form-control-sm" value="{{ sub.midia_fonte or '' }}" placeholder="Landsat, Drone, População"></div>
+                                                        <div class="col-md-4 mb-2"><label class="form-label fw-bold">URL da Mídia (Online)</label><input type="text" name="midia_url" class="form-control form-control-sm" value="{{ sub.midia_url or '' }}"></div>
+                                                        <div class="col-12 mb-2"><label class="form-label fw-bold">Descrição Adicional</label><textarea name="description" class="form-control form-control-sm" rows="2">{{ sub.description or '' }}</textarea></div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                          </div>
+                                          <div class="modal-footer">
+                                            <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+                                            <button type="submit" class="btn btn-warning btn-sm">Salvar Alterações</button>
+                                          </div>
+                                      </form>
+                                    </div>
+                                  </div>
+                                </div>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="7" class="text-center text-muted">Nenhum envio registrado.</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal do Mapa de Pré-visualização na Curadoria -->
+<div class="modal fade" id="mapModal" tabindex="-1" aria-labelledby="mapModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header bg-dark text-white">
+        <h5 class="modal-title" id="mapModalLabel">Localização da Submissão</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body p-0">
+        <div id="previewMap" style="height: 450px; width: 100%;"></div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let previewMap = null;
+let previewMarker = null;
+
+function showOnMap(lat, lng, title, mediaUrl) {
+    var modalElement = document.getElementById('mapModal');
+    var modal = new bootstrap.Modal(modalElement);
+    modal.show();
+
+    modalElement.addEventListener('shown.bs.modal', function () {
+        if (!previewMap) {
+            previewMap = L.map('previewMap').setView([lat, lng], 16);
+            L.tileLayer('http://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
+                maxZoom: 20,
+                subdomains:['mt0','mt1','mt2','mt3'],
+                attribution: '&copy; Google'
+            }).addTo(previewMap);
+        } else {
+            previewMap.setView([lat, lng], 16);
+            if (previewMarker) previewMap.removeLayer(previewMarker);
+        }
+
+        let popupContent = `<b>${title}</b>`;
+        if (mediaUrl) {
+            let filename = mediaUrl.toLowerCase();
+            if (filename.endsWith('.mp4') || filename.endsWith('.mov') || filename.endsWith('.webm')) {
+                popupContent += `<br><video width="100%" controls src="${mediaUrl}"></video>`;
+            } else {
+                popupContent += `<br><img src="${mediaUrl}" width="100%">`;
+            }
+        }
+
+        previewMarker = L.marker([lat, lng]).addTo(previewMap).bindPopup(popupContent).openPopup();
+        previewMap.invalidateSize();
+    }, { once: true });
+}
+</script>
+{% endblock %}
