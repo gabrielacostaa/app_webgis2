@@ -293,16 +293,25 @@ def upload_point():
     return redirect(url_for('index'))
 
 @app.route('/api/occurrences')
-@login_required
+
+@app.route('/api/occurrences')
 def get_occurrences():
     conn = get_db_connection()
-    points = conn.execute("SELECT * FROM submissions WHERE submission_type = 'point' AND status = 'aprovado'").fetchall()
+    try:
+        points = conn.execute("SELECT * FROM submissions WHERE submission_type = 'point' AND status = 'aprovado'").fetchall()
+    except Exception as e:
+        conn.close()
+        return jsonify([])
     conn.close()
-    
+
     features = []
     for p in points:
         p_dict = dict(p)
-        media_url = url_for('serve_layer', filename=p['media_filename']) if p['media_filename'] else p_dict.get('midia_url')
+        media_url = None
+        if p_dict.get('media_filename'):
+            media_url = f"/api/layer/{p_dict['media_filename']}"
+        elif p_dict.get('media_url'):
+            media_url = p_dict.get('media_url')
         
         props = {
             "id": p['id'],
