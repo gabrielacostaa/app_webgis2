@@ -1,6 +1,6 @@
-Flask==2.2.5
-Werkzeug==2.2.3
-Flask-Login==0.6.2
+Flask>=3.0.0
+Werkzeug>=3.0.0
+Flask-Login>=0.6.3
 gunicorn>=21.2.0
 setuptools
 geopandas>=1.0.0
