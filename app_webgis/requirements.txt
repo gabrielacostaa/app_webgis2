@@ -1,7 +1,8 @@
 Flask==2.2.5
 Werkzeug==2.2.3
 Flask-Login==0.6.2
-gunicorn==20.1.0
+gunicorn>=21.2.0
+setuptools
 geopandas>=1.0.0
 pyogrio>=0.11.0
 shapely>=2.0.0
