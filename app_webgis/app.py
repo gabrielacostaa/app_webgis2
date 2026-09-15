@@ -92,15 +92,18 @@ def get_layers():
     return jsonify(layers_data)
 
 @app.route('/api/layer/<path:filename>')
-@login_required
 def serve_layer(filename):
-    # Procura na pasta principal ou na pasta de uploads
-    if os.path.exists(os.path.join(app.config['LAYERS_FOLDER'], filename)):
-        return send_from_directory(app.config['LAYERS_FOLDER'], filename)
-    elif os.path.exists(os.path.join(app.config['UPLOAD_FOLDER'], filename)):
-        return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
-    abort(404)
-@app.route('/<path:filename>')
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    file_path = os.path.join(base_dir, filename)
+    if os.path.exists(file_path):
+        return send_from_directory(base_dir, filename)
+    
+    # Se não achar na raiz, tenta na pasta de uploads configurada
+    upload_folder = app.config.get('UPLOAD_FOLDER', '')
+    if upload_folder and os.path.exists(os.path.join(upload_folder, filename)):
+        return send_from_directory(upload_folder, filename)
+        
+    abort(404)@app.route('/<path:filename>')
 def serve_direct_geojson(filename):
     if filename.endswith('.geojson'):
         base_dir = os.path.dirname(os.path.abspath(__file__))
