@@ -100,7 +100,7 @@ def serve_layer(filename):
     elif os.path.exists(os.path.join(app.config['UPLOAD_FOLDER'], filename)):
         return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
     abort(404)
-    @app.route('/<path:filename>')
+@app.route('/<path:filename>')
 def serve_direct_geojson(filename):
     if filename.endswith('.geojson'):
         base_dir = os.path.dirname(os.path.abspath(__file__))
