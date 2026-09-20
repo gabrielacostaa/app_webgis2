@@ -42,6 +42,40 @@ document.addEventListener("DOMContentLoaded", function() {
         return colors[Math.floor(Math.random() * colors.length)];
     }
 
+    // Gerenciador de Legenda Dinâmica
+    var activeLegendItems = {};
+
+    function updateDynamicLegend() {
+        var container = document.getElementById('map-legend-content');
+        if (!container) return;
+
+        var keys = Object.keys(activeLegendItems);
+        if (keys.length === 0) {
+            container.innerHTML = '<div class="text-muted fst-italic py-1" style="font-size: 10px;">Nenhuma camada ativa</div>';
+            return;
+        }
+
+        var html = '';
+        keys.forEach(function(key) {
+            html += '<div class="d-flex align-items-center gap-2 mb-1.5">' + activeLegendItems[key] + '</div>';
+        });
+        container.innerHTML = html;
+    }
+
+    map.on('overlayadd', function(e) {
+        if (e.layer && e.layer._layerIdKey && e.layer.legendHtml) {
+            activeLegendItems[e.layer._layerIdKey] = e.layer.legendHtml;
+            updateDynamicLegend();
+        }
+    });
+
+    map.on('overlayremove', function(e) {
+        if (e.layer && e.layer._layerIdKey) {
+            delete activeLegendItems[e.layer._layerIdKey];
+            updateDynamicLegend();
+        }
+    });
+
     // 1. Símbolo de GPS em BRANCO para Pontos de Deslizamento Registrados (pontos_angra.geojson)
     function createWhiteGPSMarker(latlng) {
         var icon = L.divIcon({
@@ -175,6 +209,18 @@ document.addEventListener("DOMContentLoaded", function() {
                                         onEachFeature: onEachFeature
                                     }).addTo(map);
                                     
+                                    geojsonLayer._layerIdKey = 'layer_' + layerData.id;
+                                    if (isRegisteredPoints) {
+                                        geojsonLayer.legendHtml = '<span class="legend-gps-white me-1"><i class="bi bi-geo-alt-fill"></i></span><span>' + layerData.name + ' (GPS Branco)</span>';
+                                    } else if (isBoundaryOrBuffer) {
+                                        geojsonLayer.legendHtml = '<span class="legend-line-dashed-red me-1"></span><span>' + layerData.name + ' (Tracejado Vermelho)</span>';
+                                    } else {
+                                        geojsonLayer.legendHtml = '<span class="d-inline-block rounded-circle me-1 border shadow-sm" style="width:14px; height:14px; background-color:' + layerColor + ';"></span><span>' + layerData.name + '</span>';
+                                    }
+
+                                    activeLegendItems[geojsonLayer._layerIdKey] = geojsonLayer.legendHtml;
+                                    updateDynamicLegend();
+
                                     layerControl.addOverlay(geojsonLayer, layerData.name);
                                     
                                     if(filename === 'angra.geojson' || filename.includes('angra')) {
@@ -190,6 +236,10 @@ document.addEventListener("DOMContentLoaded", function() {
                                 });
                         } else {
                             if (geojsonLayer) {
+                                if (geojsonLayer._layerIdKey) {
+                                    delete activeLegendItems[geojsonLayer._layerIdKey];
+                                    updateDynamicLegend();
+                                }
                                 map.removeLayer(geojsonLayer);
                                 layerControl.removeLayer(geojsonLayer);
                                 geojsonLayer = null;
@@ -360,8 +410,13 @@ document.addEventListener("DOMContentLoaded", function() {
                     }
                 });
 
+                markers._layerIdKey = 'curadoria';
+                markers.legendHtml = '<span class="legend-gps-blue me-1"><i class="bi bi-geo-alt-fill"></i></span><span>Pontos Curadoria (GPS Azul)</span>';
+                activeLegendItems['curadoria'] = markers.legendHtml;
+
                 markers.addLayer(geoJsonLayer);
                 map.addLayer(markers);
+                updateDynamicLegend();
                 layerControl.addOverlay(markers, "Pontos de Deslizamento (Curadoria)");
             }
         })
