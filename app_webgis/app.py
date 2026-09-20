@@ -112,7 +112,7 @@ def upgrade_db():
             CREATE TABLE IF NOT EXISTS users (
                 id {pk_type},
                 username TEXT UNIQUE NOT NULL,
-                password TEXT NOT NULL,
+                password_hash TEXT NOT NULL,
                 role TEXT NOT NULL,
                 role_level TEXT DEFAULT 'user',
                 email TEXT,
@@ -136,6 +136,7 @@ def upgrade_db():
                 filename TEXT,
                 status TEXT DEFAULT 'pendente',
                 feedback TEXT,
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 submission_type TEXT DEFAULT 'layer',
                 lat REAL,
@@ -174,23 +175,49 @@ def upgrade_db():
     except Exception as e:
         print("Aviso na criacao da tabela layers:", e)
 
+    # Seed default users if empty
     try:
         res = conn.execute('SELECT COUNT(*) FROM users').fetchone()
         count = res[0] if res else 0
         if count == 0:
             default_users = [
-                ('admin', generate_password_hash('admin123'), 'admin', 'admin_geral', 'admin@geoportal.gov.br', 'Administrador Geral', '0000-0000', 'ADM-001', '000.000.000-00'),
-                ('org', generate_password_hash('org123'), 'org', 'org', 'org@parceiro.org', 'Organização Parceira', '1111-1111', 'ORG-001', '111.111.111-11'),
-                ('user', generate_password_hash('user123'), 'user', 'user', 'user@cidadao.br', 'Usuário Registrador', '2222-2222', 'USR-001', '222.222.222-22')
+                ('admin', generate_password_hash('Admin@123'), 'admin', 'admin_geral', 'admin.geral@geoportal.gov.br', 'Administrador Geral MOVMASSA', '(24) 99999-0000', 'ADM-GERAL-001', '000.000.000-00'),
+                ('defesa_nacional', generate_password_hash('Defesa@123'), 'admin', 'admin_nacional', 'nacional@defesacivil.gov.br', 'Agente Defesa Civil Nacional', '(61) 3333-1000', 'GOV-DCN-2026', '111.111.111-11'),
+                ('defesa_estadual', generate_password_hash('Defesa@123'), 'admin', 'admin_estadual', 'estadual@defesacivil.rj.gov.br', 'Agente Defesa Civil Estadual RJ', '(21) 2222-2000', 'EST-DCE-2026', '222.222.222-22'),
+                ('defesa_municipal', generate_password_hash('Defesa@123'), 'admin', 'admin_municipal', 'defesacivil@angra.rj.gov.br', 'Agente Defesa Civil Municipal Angra', '(24) 3365-3000', 'MUN-DCM-2026', '333.333.333-33'),
+                ('org', generate_password_hash('Org@123'), 'org', 'org', 'contato@orgamb.org.br', 'Organização Técnica Ambientalista', '(24) 98888-4000', 'ORG-ANG-2026', '444.444.444-44'),
+                ('user', generate_password_hash('User@123'), 'user', 'user', 'usuario@email.com', 'Usuário Comum de Campo', '(24) 97777-5000', 'N/A', '555.555.555-55')
             ]
             for u in default_users:
                 conn.execute('''
-                    INSERT INTO users (username, password, role, role_level, email, nome_completo, telefone, matricula, cpf)
+                    INSERT INTO users (username, password_hash, role, role_level, email, nome_completo, telefone, matricula, cpf)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', u)
             conn.commit()
     except Exception as e:
         print("Aviso no seed de usuarios:", e)
+
+    # Seed default GIS layers if empty
+    try:
+        res = conn.execute('SELECT COUNT(*) FROM layers').fetchone()
+        layers_count = res[0] if res else 0
+        if layers_count == 0:
+            ordered_layers = [
+                ('Angra dos Reis', 'angra.geojson', 1, 'Limite Municipal - IBGE'),
+                ('Angra dos Reis Buffer (0,1 grau)', 'buffer_angra_geojson.geojson', 1, 'Limite Municipal (Buffer) - IBGE'),
+                ('Hidrografia', 'hidrografia.geojson', 1, 'Hidrografia - IBGE'),
+                ('Bacia Hidrográfica - Buffer', 'BHangra_buffer_GJ.geojson', 1, 'Hidrografia'),
+                ('Área Urbanizada', 'areasurbanizadas_angra.geojson', 1, 'IBGE'),
+                ('Pontos de Deslizamento Registrados', 'pontos_angra.geojson', 1, 'Ocorrências')
+            ]
+            for l in ordered_layers:
+                conn.execute('''
+                    INSERT INTO layers (name, filename, is_active, category)
+                    VALUES (?, ?, ?, ?)
+                ''', l)
+            conn.commit()
+    except Exception as e:
+        print("Aviso no seed de camadas:", e)
     users_cols = [
         ('role_level', 'TEXT DEFAULT "user"'),
         ('email', 'TEXT'),
@@ -208,6 +235,7 @@ def upgrade_db():
 
     # Check submissions table columns
     sub_cols = [
+        ('timestamp', 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP'),
         ('submission_type', 'TEXT DEFAULT "layer"'),
         ('lat', 'REAL'),
         ('lng', 'REAL'),
