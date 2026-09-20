@@ -42,16 +42,28 @@ document.addEventListener("DOMContentLoaded", function() {
         return colors[Math.floor(Math.random() * colors.length)];
     }
 
-    // Função para criar o ícone moderno de ponto de deslizamento (Simbologia Moderna)
-    function createModernPointMarker(latlng) {
-        return L.circleMarker(latlng, {
-            radius: 6.5,
-            fillColor: "#FFFFFF",  // Branco puro
-            color: "#0F172A",      // Contorno escuro elegante
-            weight: 2,
-            opacity: 1.0,
-            fillOpacity: 1.0
+    // 1. Símbolo de GPS em BRANCO para Pontos de Deslizamento Registrados (pontos_angra.geojson)
+    function createWhiteGPSMarker(latlng) {
+        var icon = L.divIcon({
+            className: 'gps-marker-container',
+            html: '<div class="gps-pin-white shadow-sm"><i class="bi bi-geo-alt-fill"></i></div>',
+            iconSize: [26, 26],
+            iconAnchor: [13, 26],
+            popupAnchor: [0, -26]
         });
+        return L.marker(latlng, { icon: icon });
+    }
+
+    // 2. Símbolo em AZUL para Pontos de Deslizamento da CURADORIA (/api/occurrences)
+    function createBlueGPSMarker(latlng) {
+        var icon = L.divIcon({
+            className: 'gps-marker-container',
+            html: '<div class="gps-pin-blue shadow-sm"><i class="bi bi-geo-alt-fill"></i></div>',
+            iconSize: [26, 26],
+            iconAnchor: [13, 26],
+            popupAnchor: [0, -26]
+        });
+        return L.marker(latlng, { icon: icon });
     }
 
     // Função de montagem de popup genérico para atributos de GeoJSON
@@ -82,7 +94,7 @@ document.addEventListener("DOMContentLoaded", function() {
                 const filename = (layerData.filename || '').toLowerCase();
                 const name = (layerData.name || '').toLowerCase();
 
-                // Identifica se é a camada de pontos de ocorrência
+                // Identifica se é a camada de pontos de ocorrência históricos registrados
                 const isRegisteredPoints = filename.includes('pontos') || name.includes('pontos') || name.includes('deslizamento');
 
                 // Identifica se é camada de Limite Municipal ou Buffer (LINHA TRACEJADA VERMELHA E SEM PREENCHIMENTO)
@@ -108,7 +120,7 @@ document.addEventListener("DOMContentLoaded", function() {
                     label.className = 'form-check-label ms-2';
                     label.htmlFor = 'layer_' + layerData.id;
                     
-                    // Exibe APENAS o nome da camada e sua categoria embaixo (sem rótulos de simbologia)
+                    // Exibe APENAS o nome da camada e sua categoria embaixo (sem rótulos extras)
                     label.innerHTML = `<strong>${layerData.name}</strong><br><small class="text-muted">${layerData.category}</small>`;
                     
                     div.appendChild(input);
@@ -148,7 +160,8 @@ document.addEventListener("DOMContentLoaded", function() {
                                         },
                                         pointToLayer: function (feature, latlng) {
                                             if (isRegisteredPoints) {
-                                                return createModernPointMarker(latlng);
+                                                // SIMBOLOGIA BRANCA (Símbolo GPS Branco) para Pontos de Deslizamento Registrados
+                                                return createWhiteGPSMarker(latlng);
                                             }
                                             return L.circleMarker(latlng, {
                                                 radius: 5,
@@ -199,7 +212,8 @@ document.addEventListener("DOMContentLoaded", function() {
 
                 var geoJsonLayer = L.geoJSON(data, {
                     pointToLayer: function (feature, latlng) {
-                        return createModernPointMarker(latlng);
+                        // SIMBOLOGIA AZUL (Símbolo GPS Azul) para Pontos da Curadoria
+                        return createBlueGPSMarker(latlng);
                     },
                     onEachFeature: function(feature, layer) {
                         let p = feature.properties;
@@ -216,7 +230,7 @@ document.addEventListener("DOMContentLoaded", function() {
                         let popupContent = `
                             <div style="max-width: 360px; font-size: 11px; max-height: 420px; overflow-y: auto;" class="p-1">
                                 <div class="d-flex justify-content-between align-items-center mb-1">
-                                    <span class="badge bg-success text-white"><i class="bi bi-check-circle-fill"></i> Origem: ${p.origem || 'Curadoria'}</span>
+                                    <span class="badge bg-primary text-white"><i class="bi bi-patch-check-fill"></i> Origem: ${p.origem || 'Curadoria'}</span>
                                     <span class="badge bg-secondary">${p.municipio || 'Angra dos Reis'} - ${p.uf || 'RJ'}</span>
                                 </div>
 
@@ -348,7 +362,7 @@ document.addEventListener("DOMContentLoaded", function() {
 
                 markers.addLayer(geoJsonLayer);
                 map.addLayer(markers);
-                layerControl.addOverlay(markers, "Pontos de Deslizamento Registrados (Curadoria)");
+                layerControl.addOverlay(markers, "Pontos de Deslizamento (Curadoria)");
             }
         })
         .catch(err => console.error("Erro ao carregar ocorrências:", err));

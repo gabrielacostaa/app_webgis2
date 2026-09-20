@@ -64,48 +64,96 @@ body {
     border-bottom: 3px dashed #DC2626;
 }
 
-.legend-point-white {
-    display: inline-block;
-    width: 14px;
-    height: 14px;
-    border-radius: 50%;
+.legend-gps-white {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
     background-color: #FFFFFF;
-    border: 2px solid #0F172A;
-    box-shadow: 0 0 6px rgba(0,0,0,0.3);
+    border: 1.5px solid #0F172A;
+    border-radius: 50% 50% 50% 0;
+    transform: rotate(-45deg);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.3);
 }
 
-/* Modern Landslide Point Symbol */
-.modern-landslide-marker-container {
+.legend-gps-white i {
+    transform: rotate(45deg);
+    font-size: 9px;
+    color: #0F172A;
+}
+
+.legend-gps-blue {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    background-color: #2563EB;
+    border: 1.5px solid #FFFFFF;
+    border-radius: 50% 50% 50% 0;
+    transform: rotate(-45deg);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+}
+
+.legend-gps-blue i {
+    transform: rotate(45deg);
+    font-size: 9px;
+    color: #FFFFFF;
+}
+
+/* GPS Pin Symbols on Map */
+.gps-marker-container {
     background: transparent !important;
     border: none !important;
 }
 
-.modern-landslide-pin {
-    width: 20px;
-    height: 20px;
+.gps-pin-white {
+    width: 26px;
+    height: 26px;
     background-color: #FFFFFF;
-    border: 2.5px solid #0F172A;
-    border-radius: 50%;
+    border: 2px solid #0F172A;
+    border-radius: 50% 50% 50% 0;
+    transform: rotate(-45deg);
     display: flex;
     align-items: center;
     justify-content: center;
-    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.35), 0 0 0 2px rgba(255, 255, 255, 0.8);
+    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.4);
     transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 
-.modern-landslide-pin:hover {
-    transform: scale(1.35);
-    border-color: #DC2626;
+.gps-pin-white i {
+    transform: rotate(45deg);
+    font-size: 13px;
+    color: #0F172A;
 }
 
-.modern-landslide-dot {
-    width: 6px;
-    height: 6px;
-    background-color: #DC2626;
-    border-radius: 50%;
+.gps-pin-blue {
+    width: 26px;
+    height: 26px;
+    background-color: #2563EB;
+    border: 2px solid #FFFFFF;
+    border-radius: 50% 50% 50% 0;
+    transform: rotate(-45deg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.4);
+    transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 
-/* Leaflet Cluster Circle White Styling */
+.gps-pin-blue i {
+    transform: rotate(45deg);
+    font-size: 13px;
+    color: #FFFFFF;
+}
+
+.gps-pin-white:hover, .gps-pin-blue:hover {
+    transform: rotate(-45deg) scale(1.3);
+    z-index: 9999 !important;
+}
+
+/* Leaflet Cluster Circle Styling */
 .marker-cluster-small, .marker-cluster-medium, .marker-cluster-large {
     background-color: rgba(15, 23, 42, 0.65) !important;
 }
