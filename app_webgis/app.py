@@ -51,6 +51,12 @@ class DBWrapper:
     def commit(self):
         self.conn.commit()
 
+    def rollback(self):
+        try:
+            self.conn.rollback()
+        except Exception:
+            pass
+
     def close(self):
         self.conn.close()
 
@@ -197,8 +203,8 @@ def upgrade_db():
         try:
             conn.execute(f'ALTER TABLE users ADD COLUMN {col} {ctype}')
             conn.commit()
-        except sqlite3.OperationalError:
-            pass
+        except Exception:
+            conn.rollback()
 
     # Check submissions table columns
     sub_cols = [
@@ -309,8 +315,8 @@ def upgrade_db():
         try:
             conn.execute(f'ALTER TABLE submissions ADD COLUMN {col} {col_type}')
             conn.commit()
-        except sqlite3.OperationalError:
-            pass
+        except Exception:
+            conn.rollback()
             
     conn.close()
 
