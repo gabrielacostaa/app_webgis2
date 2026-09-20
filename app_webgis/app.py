@@ -60,124 +60,6 @@ def load_user(user_id):
         )
     return None
 
-<<<<<<< HEAD
-@app.route('/')
-def index():
-    if not current_user.is_authenticated:
-        return redirect(url_for('login'))
-    conn = get_db_connection()
-    layers = conn.execute('SELECT * FROM layers WHERE is_active = 1').fetchall()
-    conn.close()
-    return render_template('index.html', layers=layers)
-
-@app.route('/login', methods=['GET', 'POST'])
-def login():
-    if request.method == 'POST':
-        username = request.form['username']
-        password = request.form['password']
-        
-        conn = get_db_connection()
-        user = conn.execute('SELECT * FROM users WHERE username = ?', (username,)).fetchone()
-        conn.close()
-        
-        if user and check_password_hash(user['password_hash'], password):
-            user_obj = User(id=user['id'], username=user['username'], role=user['role'])
-            login_user(user_obj)
-            return redirect(url_for('index'))
-        else:
-            flash('Login inválido. Verifique suas credenciais.', 'danger')
-            
-    return render_template('login.html')
-
-@app.route('/logout')
-@login_required
-def logout():
-    logout_user()
-    return redirect(url_for('login'))
-
-# --- API e Uploads ---
-
-@app.route('/api/layers')
-@login_required
-def get_layers():
-    conn = get_db_connection()
-    layers = conn.execute('SELECT * FROM layers WHERE is_active = 1 ORDER BY id ASC').fetchall()
-    conn.close()
-    
-    layers_data = []
-    for row in layers:
-        layers_data.append({
-            'id': row['id'],
-            'name': row['name'],
-            'filename': row['filename'],
-            'category': row['category']
-        })
-    return jsonify(layers_data)
-
-@app.route('/api/layer/<path:filename>')
-def serve_layer(filename):
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    file_path = os.path.join(base_dir, filename)
-    if os.path.exists(file_path):
-        return send_from_directory(base_dir, filename)
-    
-    # Se não achar na raiz, tenta na pasta de uploads configurada
-    upload_folder = app.config.get('UPLOAD_FOLDER', '')
-    if upload_folder and os.path.exists(os.path.join(upload_folder, filename)):
-        return send_from_directory(upload_folder, filename)
-        
-    abort(404)@app.route('/<path:filename>')
-def serve_direct_geojson(filename):
-    if filename.endswith('.geojson'):
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        return send_from_directory(base_dir, filename)
-    abort(404)
-
-@app.route('/upload', methods=['POST'])
-@login_required
-def upload_file():
-    if current_user.role not in ['admin', 'org']:
-        flash('Apenas Administradores e Organizações podem enviar novas camadas.', 'danger')
-        return redirect(url_for('index'))
-
-    if 'file' not in request.files:
-        flash('Nenhum arquivo enviado', 'danger')
-        return redirect(url_for('index'))
-        
-    file = request.files['file']
-    title = request.form.get('title')
-    description = request.form.get('description')
-    
-    if file.filename == '':
-        flash('Nenhum arquivo selecionado', 'danger')
-        return redirect(url_for('index'))
-        
-    if file and file.filename.endswith('.geojson'):
-        filename = secure_filename(file.filename)
-        # Avoid collisions
-        import time
-        filename = f"{int(time.time())}_{filename}"
-        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        file.save(filepath)
-        
-        conn = get_db_connection()
-        conn.execute('INSERT INTO submissions (user_id, title, description, filename) VALUES (?, ?, ?, ?)',
-                     (current_user.id, title, description, filename))
-        conn.commit()
-        conn.close()
-        
-        flash('Upload realizado com sucesso! Aguardando aprovação na Curadoria.', 'success')
-    else:
-        flash('Formato inválido. Apenas .geojson é permitido no momento.', 'danger')
-        
-    return redirect(url_for('index'))
-
-import tempfile
-import geopandas as gpd
-from shapely.geometry import Point
-
-=======
->>>>>>> f41acc1 (Atualizacao WebGIS MOVMASSA: camadas em linha tracejada vermelha, pontos brancos, relatorio PDF, 4 niveis Defesa Civil e upload massivo Shapefile)
 def upgrade_db():
     conn = get_db_connection()
     
@@ -401,12 +283,24 @@ def get_layers():
     return jsonify(layers_data)
 
 @app.route('/api/layer/<path:filename>')
-@login_required
 def serve_layer(filename):
-    if os.path.exists(os.path.join(app.config['LAYERS_FOLDER'], filename)):
-        return send_from_directory(app.config['LAYERS_FOLDER'], filename)
-    elif os.path.exists(os.path.join(app.config['UPLOAD_FOLDER'], filename)):
-        return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    file_path = os.path.join(base_dir, filename)
+    if os.path.exists(file_path):
+        return send_from_directory(base_dir, filename)
+    
+    # Se não achar na raiz, tenta na pasta de uploads configurada
+    upload_folder = app.config.get('UPLOAD_FOLDER', '')
+    if upload_folder and os.path.exists(os.path.join(upload_folder, filename)):
+        return send_from_directory(upload_folder, filename)
+        
+    abort(404)
+
+@app.route('/<path:filename>')
+def serve_direct_geojson(filename):
+    if filename.endswith('.geojson'):
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        return send_from_directory(base_dir, filename)
     abort(404)
 
 @app.route('/upload', methods=['POST'])
@@ -510,10 +404,6 @@ def upload_shapefile_bulk():
         flash('Por favor, envie um arquivo compactado em formato .zip contendo os arquivos do Shapefile (.shp, .shx, .dbf, .prj).', 'danger')
         return redirect(url_for('index'))
 
-    # Verify user mandatory info
-    if not current_user.nome_completo or not current_user.cpf or not current_user.matricula:
-        flash('Atenção: Por favor, complete seu Nome Completo, CPF e Matrícula em seu perfil antes de cadastrar dados de curadoria.', 'warning')
-
     try:
         with tempfile.TemporaryDirectory() as tmpdir:
             zip_path = os.path.join(tmpdir, secure_filename(file.filename))
@@ -522,7 +412,6 @@ def upload_shapefile_bulk():
             with zipfile.ZipFile(zip_path, 'r') as zip_ref:
                 zip_ref.extractall(tmpdir)
 
-            # Find .shp file
             shp_files = [os.path.join(dp, f) for dp, dn, filenames in os.walk(tmpdir) for f in filenames if f.endswith('.shp')]
 
             if not shp_files:
@@ -532,7 +421,6 @@ def upload_shapefile_bulk():
             shp_path = shp_files[0]
             gdf = gpd.read_file(shp_path)
 
-            # Reproject to WGS84 if needed
             if gdf.crs is not None and gdf.crs.to_epsg() != 4326:
                 gdf = gdf.to_crs(epsg=4326)
 
@@ -583,27 +471,17 @@ def upload_shapefile_bulk():
     return redirect(url_for('curadoria'))
 
 @app.route('/api/occurrences')
-
-@app.route('/api/occurrences')
+@login_required
 def get_occurrences():
     conn = get_db_connection()
-    try:
-        points = conn.execute("SELECT * FROM submissions WHERE submission_type = 'point' AND status = 'aprovado'").fetchall()
-    except Exception as e:
-        conn.close()
-        return jsonify([])
+    points = conn.execute("SELECT * FROM submissions WHERE submission_type = 'point' AND status = 'aprovado'").fetchall()
     conn.close()
-
+    
     features = []
     for p in points:
         p_dict = dict(p)
-        media_url = None
-        if p_dict.get('media_filename'):
-            media_url = f"/api/layer/{p_dict['media_filename']}"
-        elif p_dict.get('media_url'):
-            media_url = p_dict.get('media_url')
+        media_url = url_for('serve_layer', filename=p['media_filename']) if p['media_filename'] else p_dict.get('midia_url')
         
-        # Deletion check: Allowed ONLY for admin_geral or the specific user who registered it
         can_delete = (current_user.role_level == 'admin_geral') or (current_user.id == p['user_id'])
         
         props = {
@@ -906,8 +784,6 @@ def delete_occurrence(sub_id):
         flash('Ocorrência não encontrada.', 'danger')
         return redirect(url_for('index'))
 
-    # Strict Permission Check:
-    # ALLOW ONLY IF current_user.role_level == 'admin_geral' OR current_user.id == sub['user_id']
     is_admin_geral = (current_user.role_level == 'admin_geral')
     is_owner = (current_user.id == sub['user_id'])
 
@@ -916,7 +792,6 @@ def delete_occurrence(sub_id):
         flash('Acesso Negado: Apenas o Administrador Geral ou o próprio usuário responsável pelo cadastro podem excluir esta ocorrência.', 'danger')
         return redirect(url_for('index'))
 
-    # Perform Deletion
     conn.execute('DELETE FROM submissions WHERE id = ?', (sub_id,))
     conn.commit()
     conn.close()
