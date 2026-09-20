@@ -450,7 +450,6 @@ def profile():
 # --- API e Uploads ---
 
 @app.route('/api/layers')
-@login_required
 def get_layers():
     conn = get_db_connection()
     layers = conn.execute('SELECT * FROM layers WHERE is_active = 1 ORDER BY id ASC').fetchall()
