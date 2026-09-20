@@ -1,0 +1,6 @@
+venv/
+*.pyc
+__pycache__/
+.DS_Store
+~$*.docx
+static/uploads/test_report.pdf

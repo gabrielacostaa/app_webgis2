@@ -1,108 +1,69 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="row">
-    <!-- Sidebar: Controle de Camadas e Upload -->
-    <div class="col-md-3">
-        <div class="card mb-3 shadow-sm">
-            <div class="card-header bg-success text-white">
-                <h5 class="mb-0">Controle de Camadas</h5>
+<div class="row g-3">
+    <!-- Sidebar: Controle de Camadas e Ações Rápidas -->
+    <div class="col-lg-3">
+        <!-- Card: Controle de Camadas -->
+        <div class="card shadow-sm border-0 rounded-4 mb-3">
+            <div class="card-header bg-dark-slate text-white d-flex justify-content-between align-items-center py-3 px-3">
+                <h6 class="mb-0 fw-bold d-flex align-items-center gap-2">
+                    <i class="bi bi-layers-half text-primary fs-5"></i> Camadas Geográficas
+                </h6>
+                <span class="badge bg-primary rounded-pill">Angra dos Reis</span>
             </div>
-            <div class="card-body" id="layer-list" style="max-height: 400px; overflow-y: auto;">
-                <div class="spinner-border text-primary" role="status" id="layer-spinner">
-                    <span class="visually-hidden">Carregando...</span>
+            <div class="card-body p-3" id="layer-list" style="max-height: 380px; overflow-y: auto;">
+                <div class="text-center py-4" id="layer-spinner">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Carregando camadas...</span>
+                    </div>
+                    <p class="small text-muted mt-2 mb-0">Carregando acervo territorial...</p>
                 </div>
             </div>
         </div>
 
-        <div class="card shadow-sm">
-            <div class="card-header bg-secondary text-white">
-                <h5 class="mb-0">Enviar Novos Dados</h5>
+        <!-- Card: Enviar Ocorrência e Upload Massivo -->
+        <div class="card shadow-sm border-0 rounded-4 mb-3">
+            <div class="card-header bg-white border-0 py-3 px-3">
+                <h6 class="mb-0 fw-bold text-dark d-flex align-items-center gap-2">
+                    <i class="bi bi-cloud-arrow-up-fill text-success fs-5"></i> Cadastrar e Importar
+                </h6>
             </div>
-            <div class="card-body p-2">
-                <ul class="nav nav-tabs nav-fill mb-3" id="uploadTabs" role="tablist">
+            <div class="card-body p-3 pt-0">
+                <div class="d-grid gap-2">
+                    <button type="button" class="btn btn-outline-primary btn-sm rounded-3 py-2 fw-semibold d-flex align-items-center justify-content-center gap-2" data-bs-toggle="modal" data-bs-target="#modalSinglePoint">
+                        <i class="bi bi-geo-fill"></i> Cadastrar 1 Ocorrência (Ponto)
+                    </button>
+
                     {% if current_user.role in ['admin', 'org'] %}
-                    <li class="nav-item" role="presentation">
-                        <button class="nav-link active" id="layer-tab" data-bs-toggle="tab" data-bs-target="#layer" type="button" role="tab" aria-controls="layer" aria-selected="true">Camada</button>
-                    </li>
+                    <button type="button" class="btn btn-success btn-sm rounded-3 py-2 fw-bold text-white d-flex align-items-center justify-content-center gap-2" data-bs-toggle="modal" data-bs-target="#modalBulkShapefile">
+                        <i class="bi bi-file-earmark-zip-fill fs-6"></i> Upload Massivo (Shapefile .zip)
+                    </button>
                     {% endif %}
-                    <li class="nav-item" role="presentation">
-                        <button class="nav-link {% if current_user.role not in ['admin', 'org'] %}active{% endif %}" id="point-tab" data-bs-toggle="tab" data-bs-target="#point" type="button" role="tab" aria-controls="point" aria-selected="{% if current_user.role not in ['admin', 'org'] %}true{% else %}false{% endif %}">Ocorrência (Ponto)</button>
-                    </li>
-                </ul>
-                <div class="tab-content" id="uploadTabsContent">
-                    {% if current_user.role in ['admin', 'org'] %}
-                    <!-- Tab Camada -->
-                    <div class="tab-pane fade show active" id="layer" role="tabpanel" aria-labelledby="layer-tab">
-                        <form action="{{ url_for('upload_file') }}" method="POST" enctype="multipart/form-data">
-                            <div class="mb-2">
-                                <label class="form-label">Título da Camada</label>
-                                <input type="text" name="title" class="form-control form-control-sm" required>
-                            </div>
-                            <div class="mb-2">
-                                <label class="form-label">Descrição (Opcional)</label>
-                                <textarea name="description" class="form-control form-control-sm" rows="2"></textarea>
-                            </div>
-                            <div class="mb-3">
-                                <label class="form-label">Arquivo GeoJSON (.geojson)</label>
-                                <input type="file" name="file" class="form-control form-control-sm" accept=".geojson" required>
-                            </div>
-                            <button type="submit" class="btn btn-secondary btn-sm w-100">Enviar para Curadoria</button>
-                        </form>
-                    </div>
-                    {% endif %}
-                    <!-- Tab Ponto / Ocorrência -->
-                    <div class="tab-pane fade {% if current_user.role not in ['admin', 'org'] %}show active{% endif %}" id="point" role="tabpanel" aria-labelledby="point-tab">
-                        <form action="{{ url_for('upload_point') }}" method="POST" enctype="multipart/form-data">
-                            <div class="mb-2">
-                                <label class="form-label">Título da Ocorrência</label>
-                                <input type="text" name="title" class="form-control form-control-sm" required>
-                            </div>
-                            <div class="mb-2">
-                                <label class="form-label">Data do Evento</label>
-                                <input type="date" name="data_evento" class="form-control form-control-sm">
-                            </div>
-                            <div class="mb-2">
-                                <label class="form-label">Descrição (Opcional)</label>
-                                <textarea name="description" class="form-control form-control-sm" rows="2"></textarea>
-                            </div>
-                            <div class="mb-2">
-                                <label class="form-label">Mídia (Foto/Vídeo - Opcional)</label>
-                                <input type="file" name="media_file" class="form-control form-control-sm" accept="image/*,video/*">
-                            </div>
-                            <div class="mb-2">
-                                <label class="form-label">Coordenadas (WGS84)</label>
-                                <div class="input-group input-group-sm mb-2">
-                                    <input type="text" id="lat" name="lat" class="form-control" placeholder="Lat (-23.00)" required>
-                                    <input type="text" id="lng" name="lng" class="form-control" placeholder="Lng (-44.31)" required>
-                                </div>
-                                <button type="button" class="btn btn-outline-info btn-sm w-100" onclick="getLocation()">📌 Capturar Minha Localização</button>
-                            </div>
-                            <button type="submit" class="btn btn-info btn-sm w-100 mt-2">Enviar Ocorrência</button>
-                        </form>
-                    </div>
                 </div>
             </div>
         </div>
 
-        <!-- Download de Camadas e Ocorrências -->
-        <div class="card mt-3 shadow-sm">
-            <div class="card-header bg-primary text-white">
-                <h5 class="mb-0">📥 Baixar Dados Spatial</h5>
+        <!-- Card: Exportação Espacial GIS -->
+        <div class="card shadow-sm border-0 rounded-4 mb-3">
+            <div class="card-header bg-white border-0 py-3 px-3">
+                <h6 class="mb-0 fw-bold text-dark d-flex align-items-center gap-2">
+                    <i class="bi bi-download text-indigo fs-5"></i> Download Spatial (QGIS/ArcGIS)
+                </h6>
             </div>
-            <div class="card-body">
+            <div class="card-body p-3 pt-0">
                 <form action="{{ url_for('download_export') }}" method="GET">
                     <div class="mb-2">
-                        <label class="form-label">Camada / Dados</label>
-                        <select name="layer_type" class="form-select form-select-sm">
-                            <option value="occurrences">Pontos de Deslizamento Registrados (Ocorrências)</option>
+                        <label class="form-label small fw-semibold">Camada ou Ocorrências</label>
+                        <select name="layer_type" class="form-select form-select-sm rounded-3">
+                            <option value="occurrences" selected>Pontos de Deslizamento Registrados (Curadoria)</option>
                             {% for l in layers %}
                             <option value="{{ l.id }}">{{ l.name }} ({{ l.category }})</option>
                             {% endfor %}
                         </select>
                     </div>
                     <div class="mb-2">
-                        <label class="form-label">Filtrar Município</label>
-                        <select name="municipio" class="form-select form-select-sm">
+                        <label class="form-label small fw-semibold">Filtrar Município</label>
+                        <select name="municipio" class="form-select form-select-sm rounded-3">
                             <option value="Todos">Todos os Municípios</option>
                             <option value="Angra dos Reis" selected>Angra dos Reis</option>
                             <option value="Paraty">Paraty</option>
@@ -110,24 +71,127 @@
                         </select>
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">Formato do Arquivo</label>
-                        <select name="format" class="form-select form-select-sm">
+                        <label class="form-label small fw-semibold">Formato do Arquivo</label>
+                        <select name="format" class="form-select form-select-sm rounded-3">
                             <option value="shapefile">Shapefile (.zip)</option>
                             <option value="geopackage">GeoPackage (.gpkg)</option>
                             <option value="geojson">GeoJSON (.geojson)</option>
                         </select>
                     </div>
-                    <button type="submit" class="btn btn-primary btn-sm w-100">Baixar Arquivo</button>
+                    <button type="submit" class="btn btn-primary btn-sm rounded-3 w-100 fw-bold">
+                        <i class="bi bi-file-earmark-arrow-down me-1"></i> Baixar Arquivo Espacial
+                    </button>
                 </form>
             </div>
         </div>
     </div>
 
-    <!-- Mapa -->
-    <div class="col-md-9">
-        <div id="map" class="shadow-sm border rounded"></div>
+    <!-- Container do Mapa -->
+    <div class="col-lg-9">
+        <div class="card shadow-sm border-0 rounded-4 overflow-hidden position-relative" style="height: calc(100vh - 120px);">
+            <!-- Overlay Legend Floating Badge -->
+            <div class="map-legend-overlay bg-white p-2 rounded-3 shadow border position-absolute top-0 end-0 m-3 z-3" style="font-size: 11px; max-width: 280px;">
+                <div class="fw-bold mb-1 border-bottom pb-1"><i class="bi bi-info-circle text-primary me-1"></i> Legenda do Mapa</div>
+                <div class="d-flex align-items-center gap-2 mb-1">
+                    <span class="legend-line-dashed-red"></span>
+                    <span>Limite & Buffer (Tracejado Vermelho)</span>
+                </div>
+                <div class="d-flex align-items-center gap-2">
+                    <span class="legend-point-white"></span>
+                    <span>Pontos de Deslizamento (Curadoria)</span>
+                </div>
+            </div>
+
+            <div id="map" style="width: 100%; height: 100%;"></div>
+        </div>
     </div>
 </div>
+
+<!-- MODAL: Cadastro de 1 Ocorrência (Ponto) -->
+<div class="modal fade" id="modalSinglePoint" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content rounded-4 border-0 shadow-lg">
+            <div class="modal-header bg-dark-slate text-white p-3">
+                <h5 class="modal-title fw-bold fs-6"><i class="bi bi-geo-alt-fill text-danger me-2"></i> Cadastrar Nova Ocorrência em Campo</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <form action="{{ url_for('upload_point') }}" method="POST" enctype="multipart/form-data">
+                <div class="modal-body p-4">
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold small">Título do Evento / Deslizamento</label>
+                        <input type="text" name="title" class="form-control form-control-sm rounded-3" placeholder="Ex: Deslizamento Morro do Carmo" required>
+                    </div>
+                    <div class="row">
+                        <div class="col-6 mb-3">
+                            <label class="form-label fw-semibold small">Data do Evento</label>
+                            <input type="date" name="data_evento" class="form-control form-control-sm rounded-3">
+                        </div>
+                        <div class="col-6 mb-3">
+                            <label class="form-label fw-semibold small">Mídia (Foto ou Vídeo)</label>
+                            <input type="file" name="media_file" class="form-control form-control-sm rounded-3" accept="image/*,video/*">
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold small">Descrição Técnica Breve</label>
+                        <textarea name="description" class="form-control form-control-sm rounded-3" rows="2" placeholder="Observações de solo, umidade e extensão..."></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold small">Coordenadas Geográficas (WGS84)</label>
+                        <div class="input-group input-group-sm mb-2">
+                            <input type="text" id="lat" name="lat" class="form-control" placeholder="Latitude (-23.00)" required>
+                            <input type="text" id="lng" name="lng" class="form-control" placeholder="Longitude (-44.31)" required>
+                        </div>
+                        <button type="button" class="btn btn-outline-primary btn-sm w-100 rounded-3" onclick="getLocation()">
+                            <i class="bi bi-crosshair me-1"></i> Capturar Minha Localização com GPS
+                        </button>
+                    </div>
+                </div>
+                <div class="modal-footer bg-light p-3 border-top-0">
+                    <button type="button" class="btn btn-outline-secondary btn-sm rounded-3" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="submit" class="btn btn-primary btn-sm rounded-3 px-4 fw-bold">Enviar para Curadoria</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+{% if current_user.role in ['admin', 'org'] %}
+<!-- MODAL: Upload Massivo em Shapefile (.zip) -->
+<div class="modal fade" id="modalBulkShapefile" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content rounded-4 border-0 shadow-lg">
+            <div class="modal-header bg-success text-white p-3">
+                <h5 class="modal-title fw-bold fs-6"><i class="bi bi-file-earmark-zip-fill me-2"></i> Upload Massivo de Nuvem de Pontos (Shapefile .zip)</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <form action="{{ url_for('upload_shapefile_bulk') }}" method="POST" enctype="multipart/form-data">
+                <div class="modal-body p-4">
+                    <div class="alert alert-info border-0 rounded-3 small mb-3">
+                        <i class="bi bi-info-circle-fill me-1"></i> Envie um arquivo compactado <strong>.zip</strong> contendo os arquivos do Shapefile (<code>.shp</code>, <code>.shx</code>, <code>.dbf</code>, <code>.prj</code>). Os pontos serão convertidos em GeoJSON e associados ao seu cadastro oficial.
+                    </div>
+
+                    <div class="p-3 bg-light rounded-3 border mb-3">
+                        <div class="fw-bold small text-dark mb-1">Responsável Associado aos Pontos:</div>
+                        <div class="small"><strong>Agente:</strong> {{ current_user.nome_completo or current_user.username }}</div>
+                        <div class="small"><strong>Nível Defesa Civil:</strong> <span class="badge bg-dark">{{ current_user.role_level }}</span></div>
+                        <div class="small"><strong>CPF:</strong> {{ current_user.cpf or 'N/A' }} | <strong>Matrícula:</strong> {{ current_user.matricula or 'N/A' }}</div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold small">Arquivo Shapefile (.zip) <span class="text-danger">*</span></label>
+                        <input type="file" name="shapefile_zip" class="form-control form-control-sm rounded-3" accept=".zip" required>
+                    </div>
+                </div>
+                <div class="modal-footer bg-light p-3 border-top-0">
+                    <button type="button" class="btn btn-outline-secondary btn-sm rounded-3" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="submit" class="btn btn-success btn-sm rounded-3 px-4 fw-bold text-white">Importar Nuvem de Pontos</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endif %}
+
 {% endblock %}
 
 {% block scripts %}
@@ -135,8 +199,8 @@
 function getLocation() {
     if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(function(position) {
-            document.getElementById('lat').value = position.coords.latitude;
-            document.getElementById('lng').value = position.coords.longitude;
+            document.getElementById('lat').value = position.coords.latitude.toFixed(6);
+            document.getElementById('lng').value = position.coords.longitude.toFixed(6);
         }, function(error) {
             alert("Erro ao obter localização: " + error.message);
         });

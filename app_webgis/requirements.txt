@@ -1,8 +1,8 @@
-Flask>=3.0.0
-Werkzeug>=3.0.0
-Flask-Login>=0.6.3
-gunicorn>=21.2.0
-setuptools
-geopandas>=1.0.0
-pyogrio>=0.11.0
-shapely>=2.0.0
+Flask==2.2.5
+Flask-Login==0.6.2
+Werkzeug==2.2.3
+geopandas==1.0.1
+shapely==2.0.7
+reportlab==5.0.1
+python-docx==1.2.0
+python-pptx==1.0.2

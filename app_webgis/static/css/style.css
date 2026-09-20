@@ -1,20 +1,110 @@
+/* MOVMASSA Geoportal Modern CSS */
+:root {
+    --primary-navy: #1E365D;
+    --secondary-slate: #2E6B9E;
+    --dark-slate: #0F172A;
+    --accent-red: #DC2626;
+    --bg-light: #F8FAFC;
+    --font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+}
+
 body {
-    background-color: #f8f9fa;
+    font-family: var(--font-family);
+    background-color: var(--bg-light);
+    color: #1E293B;
 }
 
-#map {
-    height: 75vh;
-    width: 100%;
+.bg-dark-slate {
+    background-color: var(--dark-slate) !important;
 }
 
-.card-header {
-    font-weight: bold;
+.bg-gradient-navy {
+    background: linear-gradient(135deg, #1E365D 0%, #0F172A 100%) !important;
 }
 
-.leaflet-popup-content-wrapper {
+.fs-7 {
+    font-size: 0.75rem !important;
+}
+
+.text-indigo {
+    color: #4F46E5 !important;
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+::-webkit-scrollbar-track {
+    background: #F1F5F9;
+}
+::-webkit-scrollbar-thumb {
+    background: #CBD5E1;
     border-radius: 4px;
 }
+::-webkit-scrollbar-thumb:hover {
+    background: #94A3B8;
+}
 
-.leaflet-popup-content table {
-    font-size: 12px;
+/* Map Styling & Floating Overlays */
+#map {
+    z-index: 1;
+}
+
+.map-legend-overlay {
+    backdrop-filter: blur(8px);
+    background-color: rgba(255, 255, 255, 0.92) !important;
+    border-radius: 12px !important;
+}
+
+.legend-line-dashed-red {
+    display: inline-block;
+    width: 24px;
+    height: 3px;
+    border-bottom: 3px dashed #DC2626;
+}
+
+.legend-point-white {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background-color: #FFFFFF;
+    border: 2px solid #1E293B;
+    box-shadow: 0 0 4px rgba(0,0,0,0.3);
+}
+
+/* Leaflet Cluster Circle White Styling */
+.marker-cluster-small, .marker-cluster-medium, .marker-cluster-large {
+    background-color: rgba(30, 54, 93, 0.6) !important;
+}
+.marker-cluster div {
+    background-color: rgba(255, 255, 255, 0.95) !important;
+    color: #1E365D !important;
+    font-weight: 700 !important;
+}
+
+/* Cards & Modals */
+.card {
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.modal-content {
+    border: none !important;
+}
+
+/* Accordion in Leaflet Popups */
+.leaflet-popup-content-wrapper {
+    border-radius: 12px !important;
+    box-shadow: 0 10px 25px -5px rgba(0,0,0,0.2) !important;
+    padding: 4px !important;
+}
+
+.leaflet-popup-content {
+    margin: 8px 12px !important;
+}
+
+.accordion-button:not(.collapsed) {
+    background-color: #EFF6FF !important;
+    color: #1E365D !important;
 }

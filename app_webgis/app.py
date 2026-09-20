@@ -1,10 +1,15 @@
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_from_directory, abort
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
-from werkzeug.security import check_password_hash
+from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
 import sqlite3
 import os
 import shutil
+import tempfile
+import zipfile
+import geopandas as gpd
+from shapely.geometry import Point
+from pdf_generator import generate_occurrence_pdf
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'geoportal_secret_key'
@@ -24,10 +29,16 @@ def get_db_connection():
     return conn
 
 class User(UserMixin):
-    def __init__(self, id, username, role):
+    def __init__(self, id, username, role, role_level='user', email='', nome_completo='', telefone='', matricula='', cpf=''):
         self.id = id
         self.username = username
         self.role = role
+        self.role_level = role_level
+        self.email = email
+        self.nome_completo = nome_completo
+        self.telefone = telefone
+        self.matricula = matricula
+        self.cpf = cpf
 
 @login_manager.user_loader
 def load_user(user_id):
@@ -35,9 +46,21 @@ def load_user(user_id):
     user = conn.execute('SELECT * FROM users WHERE id = ?', (user_id,)).fetchone()
     conn.close()
     if user:
-        return User(id=user['id'], username=user['username'], role=user['role'])
+        u = dict(user)
+        return User(
+            id=u['id'],
+            username=u['username'],
+            role=u['role'],
+            role_level=u.get('role_level', 'user'),
+            email=u.get('email', ''),
+            nome_completo=u.get('nome_completo', ''),
+            telefone=u.get('telefone', ''),
+            matricula=u.get('matricula', ''),
+            cpf=u.get('cpf', '')
+        )
     return None
 
+<<<<<<< HEAD
 @app.route('/')
 def index():
     if not current_user.is_authenticated:
@@ -153,9 +176,29 @@ import tempfile
 import geopandas as gpd
 from shapely.geometry import Point
 
+=======
+>>>>>>> f41acc1 (Atualizacao WebGIS MOVMASSA: camadas em linha tracejada vermelha, pontos brancos, relatorio PDF, 4 niveis Defesa Civil e upload massivo Shapefile)
 def upgrade_db():
     conn = get_db_connection()
-    columns_to_add = [
+    
+    # Check users table columns
+    users_cols = [
+        ('role_level', 'TEXT DEFAULT "user"'),
+        ('email', 'TEXT'),
+        ('nome_completo', 'TEXT'),
+        ('telefone', 'TEXT'),
+        ('matricula', 'TEXT'),
+        ('cpf', 'TEXT')
+    ]
+    for col, ctype in users_cols:
+        try:
+            conn.execute(f'ALTER TABLE users ADD COLUMN {col} {ctype}')
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass
+
+    # Check submissions table columns
+    sub_cols = [
         ('submission_type', 'TEXT DEFAULT "layer"'),
         ('lat', 'REAL'),
         ('lng', 'REAL'),
@@ -207,7 +250,7 @@ def upgrade_db():
         ('geol_idade', 'TEXT'),
         ('geol_tectonismo', 'TEXT'),
         
-        # Fatores Antrópicos
+        # Antrópicos
         ('antrop_escavacao', 'TEXT'),
         ('antrop_sobrecarga', 'TEXT'),
         ('antrop_tipo_uso', 'TEXT'),
@@ -251,18 +294,167 @@ def upgrade_db():
         ('midia_tipo', 'TEXT'),
         ('midia_fonte', 'TEXT'),
         ('midia_url', 'TEXT'),
-        ('dados_ambientais', 'TEXT'),
-        ('dados_economicos', 'TEXT'),
+        
+        # Responsável & Origem
+        ('origem', 'TEXT DEFAULT "Curadoria"'),
+        ('responsavel_nome', 'TEXT'),
+        ('responsavel_cpf', 'TEXT'),
+        ('responsavel_matricula', 'TEXT'),
+        ('responsavel_nivel', 'TEXT')
     ]
-    for col, col_type in columns_to_add:
+    for col, col_type in sub_cols:
         try:
             conn.execute(f'ALTER TABLE submissions ADD COLUMN {col} {col_type}')
             conn.commit()
         except sqlite3.OperationalError:
             pass
+            
     conn.close()
 
 upgrade_db()
+
+@app.route('/')
+def index():
+    if not current_user.is_authenticated:
+        return redirect(url_for('login'))
+    conn = get_db_connection()
+    layers = conn.execute('SELECT * FROM layers WHERE is_active = 1').fetchall()
+    conn.close()
+    return render_template('index.html', layers=layers)
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
+        
+        conn = get_db_connection()
+        user = conn.execute('SELECT * FROM users WHERE username = ?', (username,)).fetchone()
+        conn.close()
+        
+        if user and check_password_hash(user['password_hash'], password):
+            u = dict(user)
+            user_obj = User(
+                id=u['id'],
+                username=u['username'],
+                role=u['role'],
+                role_level=u.get('role_level', 'user'),
+                email=u.get('email', ''),
+                nome_completo=u.get('nome_completo', ''),
+                telefone=u.get('telefone', ''),
+                matricula=u.get('matricula', ''),
+                cpf=u.get('cpf', '')
+            )
+            login_user(user_obj)
+            return redirect(url_for('index'))
+        else:
+            flash('Login inválido. Verifique suas credenciais.', 'danger')
+            
+    return render_template('login.html')
+
+@app.route('/logout')
+@login_required
+def logout():
+    logout_user()
+    return redirect(url_for('login'))
+
+@app.route('/profile', methods=['GET', 'POST'])
+@login_required
+def profile():
+    if request.method == 'POST':
+        nome_completo = request.form.get('nome_completo')
+        cpf = request.form.get('cpf')
+        email = request.form.get('email')
+        telefone = request.form.get('telefone')
+        matricula = request.form.get('matricula')
+        
+        conn = get_db_connection()
+        conn.execute('''
+            UPDATE users SET nome_completo = ?, cpf = ?, email = ?, telefone = ?, matricula = ?
+            WHERE id = ?
+        ''', (nome_completo, cpf, email, telefone, matricula, current_user.id))
+        conn.commit()
+        conn.close()
+        
+        flash('Perfil atualizado com sucesso!', 'success')
+        return redirect(url_for('index'))
+        
+    return render_template('profile.html')
+
+# --- API e Uploads ---
+
+@app.route('/api/layers')
+@login_required
+def get_layers():
+    conn = get_db_connection()
+    layers = conn.execute('SELECT * FROM layers WHERE is_active = 1 ORDER BY id ASC').fetchall()
+    conn.close()
+    
+    layers_data = []
+    for row in layers:
+        layers_data.append({
+            'id': row['id'],
+            'name': row['name'],
+            'filename': row['filename'],
+            'category': row['category']
+        })
+    return jsonify(layers_data)
+
+@app.route('/api/layer/<path:filename>')
+@login_required
+def serve_layer(filename):
+    if os.path.exists(os.path.join(app.config['LAYERS_FOLDER'], filename)):
+        return send_from_directory(app.config['LAYERS_FOLDER'], filename)
+    elif os.path.exists(os.path.join(app.config['UPLOAD_FOLDER'], filename)):
+        return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+    abort(404)
+
+@app.route('/upload', methods=['POST'])
+@login_required
+def upload_file():
+    if current_user.role not in ['admin', 'org']:
+        flash('Apenas Administradores e Organizações podem enviar novas camadas.', 'danger')
+        return redirect(url_for('index'))
+
+    if 'file' not in request.files:
+        flash('Nenhum arquivo enviado', 'danger')
+        return redirect(url_for('index'))
+        
+    file = request.files['file']
+    title = request.form.get('title')
+    description = request.form.get('description')
+    
+    if file.filename == '':
+        flash('Nenhum arquivo selecionado', 'danger')
+        return redirect(url_for('index'))
+        
+    if file and file.filename.endswith('.geojson'):
+        filename = secure_filename(file.filename)
+        import time
+        filename = f"{int(time.time())}_{filename}"
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        file.save(filepath)
+        
+        conn = get_db_connection()
+        conn.execute('''
+            INSERT INTO submissions (user_id, title, description, filename, responsavel_nome, responsavel_cpf, responsavel_matricula, responsavel_nivel, origem)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            current_user.id, title, description, filename,
+            current_user.nome_completo or current_user.username,
+            current_user.cpf or 'N/A',
+            current_user.matricula or 'N/A',
+            current_user.role_level or current_user.role,
+            'Curadoria'
+        ))
+        conn.commit()
+        conn.close()
+        
+        flash('Upload realizado com sucesso! Aguardando aprovação na Curadoria.', 'success')
+    else:
+        flash('Formato inválido. Apenas .geojson é permitido para camadas.', 'danger')
+        
+    return redirect(url_for('index'))
 
 @app.route('/upload_point', methods=['POST'])
 @login_required
@@ -283,14 +475,112 @@ def upload_point():
         
     conn = get_db_connection()
     conn.execute('''
-        INSERT INTO submissions (user_id, title, description, submission_type, lat, lng, media_filename, filename, data_evento, municipio, uf) 
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ''', (current_user.id, title, description, 'point', lat, lng, media_filename, '', data_evento, 'Angra dos Reis', 'RJ'))
+        INSERT INTO submissions (
+            user_id, title, description, submission_type, lat, lng, media_filename, filename, data_evento, municipio, uf,
+            origem, responsavel_nome, responsavel_cpf, responsavel_matricula, responsavel_nivel
+        ) 
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (
+        current_user.id, title, description, 'point', lat, lng, media_filename, '', data_evento, 'Angra dos Reis', 'RJ',
+        'Curadoria',
+        current_user.nome_completo or current_user.username,
+        current_user.cpf or 'N/A',
+        current_user.matricula or 'N/A',
+        current_user.role_level or current_user.role
+    ))
     conn.commit()
     conn.close()
     
     flash('Ocorrência reportada com sucesso! Aguardando aprovação na Curadoria.', 'success')
     return redirect(url_for('index'))
+
+@app.route('/upload_shapefile_bulk', methods=['POST'])
+@login_required
+def upload_shapefile_bulk():
+    if current_user.role not in ['admin', 'org']:
+        flash('Apenas Administradores e Organizações podem enviar nuvens de pontos em Shapefile.', 'danger')
+        return redirect(url_for('index'))
+
+    if 'shapefile_zip' not in request.files:
+        flash('Nenhum arquivo Shapefile (.zip) foi selecionado.', 'danger')
+        return redirect(url_for('index'))
+
+    file = request.files['shapefile_zip']
+    if file.filename == '' or not file.filename.endswith('.zip'):
+        flash('Por favor, envie um arquivo compactado em formato .zip contendo os arquivos do Shapefile (.shp, .shx, .dbf, .prj).', 'danger')
+        return redirect(url_for('index'))
+
+    # Verify user mandatory info
+    if not current_user.nome_completo or not current_user.cpf or not current_user.matricula:
+        flash('Atenção: Por favor, complete seu Nome Completo, CPF e Matrícula em seu perfil antes de cadastrar dados de curadoria.', 'warning')
+
+    try:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            zip_path = os.path.join(tmpdir, secure_filename(file.filename))
+            file.save(zip_path)
+
+            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                zip_ref.extractall(tmpdir)
+
+            # Find .shp file
+            shp_files = [os.path.join(dp, f) for dp, dn, filenames in os.walk(tmpdir) for f in filenames if f.endswith('.shp')]
+
+            if not shp_files:
+                flash('Nenhum arquivo .shp foi encontrado dentro do arquivo .zip enviado.', 'danger')
+                return redirect(url_for('index'))
+
+            shp_path = shp_files[0]
+            gdf = gpd.read_file(shp_path)
+
+            # Reproject to WGS84 if needed
+            if gdf.crs is not None and gdf.crs.to_epsg() != 4326:
+                gdf = gdf.to_crs(epsg=4326)
+
+            conn = get_db_connection()
+            count = 0
+            for idx, row in gdf.iterrows():
+                geom = row.geometry
+                if geom is None:
+                    continue
+
+                if geom.geom_type == 'Point':
+                    lng, lat = geom.x, geom.y
+                elif hasattr(geom, 'centroid'):
+                    lng, lat = geom.centroid.x, geom.centroid.y
+                else:
+                    continue
+
+                title = row.get('title') or row.get('NOME') or row.get('DESCRICAO') or f"Ponto Deslizamento #{idx+1}"
+                desc = row.get('description') or row.get('OBS') or f"Ponto importado em lote via Shapefile por {current_user.nome_completo or current_user.username}"
+                tipologia = row.get('tipologia') or row.get('TIPO') or "Deslizamento de Encosta"
+
+                conn.execute('''
+                    INSERT INTO submissions (
+                        user_id, title, description, submission_type, lat, lng, filename, status,
+                        origem, tipologia, municipio, uf,
+                        responsavel_nome, responsavel_cpf, responsavel_matricula, responsavel_nivel
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    current_user.id, str(title), str(desc), 'point', float(lat), float(lng), '', 'aprovado',
+                    'Curadoria', str(tipologia), 'Angra dos Reis', 'RJ',
+                    current_user.nome_completo or current_user.username,
+                    current_user.cpf or 'N/A',
+                    current_user.matricula or 'N/A',
+                    current_user.role_level or current_user.role
+                ))
+                count += 1
+
+            conn.commit()
+            conn.close()
+
+            flash(f'Sucesso! {count} pontos de ocorrência importados do Shapefile (.zip) e adicionados diretamente à Curadoria.', 'success')
+
+    except Exception as e:
+        print(f"Erro no processamento do Shapefile: {e}")
+        flash(f'Erro ao processar o arquivo Shapefile: {str(e)}', 'danger')
+
+    return redirect(url_for('curadoria'))
 
 @app.route('/api/occurrences')
 
@@ -313,6 +603,9 @@ def get_occurrences():
         elif p_dict.get('media_url'):
             media_url = p_dict.get('media_url')
         
+        # Deletion check: Allowed ONLY for admin_geral or the specific user who registered it
+        can_delete = (current_user.role_level == 'admin_geral') or (current_user.id == p['user_id'])
+        
         props = {
             "id": p['id'],
             "title": p['title'],
@@ -326,6 +619,12 @@ def get_occurrences():
             "lat": p['lat'],
             "lng": p['lng'],
             "zona": p_dict.get('zona'),
+            "origem": p_dict.get('origem') or 'Curadoria',
+            "responsavel_nome": p_dict.get('responsavel_nome') or 'Defesa Civil',
+            "responsavel_cpf": p_dict.get('responsavel_cpf') or 'N/A',
+            "responsavel_matricula": p_dict.get('responsavel_matricula') or 'N/A',
+            "responsavel_nivel": p_dict.get('responsavel_nivel') or 'Geral',
+            "can_delete": can_delete,
             "area_u_habitacoes": p_dict.get('area_u_habitacoes'),
             "perc_area_atu": p_dict.get('perc_area_atu'),
             "area_ar": p_dict.get('area_ar'),
@@ -426,6 +725,30 @@ def get_occurrences():
         "features": features
     })
 
+@app.route('/api/occurrence/<int:point_id>/pdf')
+@login_required
+def occurrence_pdf(point_id):
+    conn = get_db_connection()
+    point = conn.execute('SELECT * FROM submissions WHERE id = ?', (point_id,)).fetchone()
+    conn.close()
+    
+    if not point:
+        flash('Ocorrência não encontrada.', 'danger')
+        return redirect(url_for('index'))
+        
+    p_dict = dict(point)
+    
+    with tempfile.TemporaryDirectory() as tmpdir:
+        pdf_path = os.path.join(tmpdir, f"relatorio_ocorrencia_{point_id}.pdf")
+        generate_occurrence_pdf(p_dict, pdf_path, upload_folder=app.config['UPLOAD_FOLDER'])
+        
+        return send_from_directory(
+            tmpdir,
+            f"relatorio_ocorrencia_{point_id}.pdf",
+            as_attachment=True,
+            mimetype='application/pdf'
+        )
+
 # --- Curadoria ---
 
 @app.route('/curadoria')
@@ -437,7 +760,7 @@ def curadoria():
         
     conn = get_db_connection()
     submissions = conn.execute('''
-        SELECT s.*, u.username 
+        SELECT s.*, u.username, u.role_level as u_role_level
         FROM submissions s 
         JOIN users u ON s.user_id = u.id 
         ORDER BY s.timestamp DESC
@@ -535,19 +858,34 @@ def curadoria_action(sub_id):
     submission = conn.execute('SELECT * FROM submissions WHERE id = ?', (sub_id,)).fetchone()
     
     if not submission:
+        conn.close()
         return jsonify({'error': 'Submission not found'}), 404
         
     if action == 'approve':
-        conn.execute('UPDATE submissions SET status = ?, feedback = ? WHERE id = ?', ('aprovado', feedback, sub_id))
+        conn.execute('''
+            UPDATE submissions 
+            SET status = 'aprovado', feedback = ?, origem = 'Curadoria',
+                responsavel_nome = COALESCE(responsavel_nome, ?),
+                responsavel_cpf = COALESCE(responsavel_cpf, ?),
+                responsavel_matricula = COALESCE(responsavel_matricula, ?),
+                responsavel_nivel = COALESCE(responsavel_nivel, ?)
+            WHERE id = ?
+        ''', (
+            feedback,
+            current_user.nome_completo or current_user.username,
+            current_user.cpf or 'N/A',
+            current_user.matricula or 'N/A',
+            current_user.role_level or current_user.role,
+            sub_id
+        ))
         
-        # Só adicionamos em "layers" se for arquivo GeoJSON (submission_type = 'layer')
         sub_dict = dict(submission)
-        if sub_dict.get('submission_type') == 'layer' or sub_dict.get('submission_type') is None:
+        if sub_dict.get('submission_type') == 'layer':
             conn.execute('INSERT INTO layers (name, filename, category, is_active) VALUES (?, ?, ?, 1)',
                          (submission['title'], submission['filename'], 'Contribuição de Usuários'))
                          
         conn.commit()
-        flash('Submissão aprovada!', 'success')
+        flash('Submissão aprovada e adicionada à camada com Origem = Curadoria!', 'success')
         
     elif action == 'reject':
         conn.execute('UPDATE submissions SET status = ?, feedback = ? WHERE id = ?', ('rejeitado', feedback, sub_id))
@@ -557,14 +895,43 @@ def curadoria_action(sub_id):
     conn.close()
     return redirect(url_for('curadoria'))
 
+@app.route('/delete_occurrence/<int:sub_id>', methods=['POST'])
+@login_required
+def delete_occurrence(sub_id):
+    conn = get_db_connection()
+    sub = conn.execute('SELECT * FROM submissions WHERE id = ?', (sub_id,)).fetchone()
+    
+    if not sub:
+        conn.close()
+        flash('Ocorrência não encontrada.', 'danger')
+        return redirect(url_for('index'))
+
+    # Strict Permission Check:
+    # ALLOW ONLY IF current_user.role_level == 'admin_geral' OR current_user.id == sub['user_id']
+    is_admin_geral = (current_user.role_level == 'admin_geral')
+    is_owner = (current_user.id == sub['user_id'])
+
+    if not (is_admin_geral or is_owner):
+        conn.close()
+        flash('Acesso Negado: Apenas o Administrador Geral ou o próprio usuário responsável pelo cadastro podem excluir esta ocorrência.', 'danger')
+        return redirect(url_for('index'))
+
+    # Perform Deletion
+    conn.execute('DELETE FROM submissions WHERE id = ?', (sub_id,))
+    conn.commit()
+    conn.close()
+
+    flash(f'Ocorrência #{sub_id} removida do sistema com sucesso.', 'success')
+    return redirect(request.referrer or url_for('index'))
+
 # --- Download / Exportação ---
 
 @app.route('/download_export', methods=['GET', 'POST'])
 @login_required
 def download_export():
-    layer_type = request.values.get('layer_type', 'occurrences') # 'occurrences' ou ID da layer
+    layer_type = request.values.get('layer_type', 'occurrences')
     municipio_filter = request.values.get('municipio', 'Todos')
-    export_format = request.values.get('format', 'shapefile') # 'shapefile', 'geopackage', 'geojson'
+    export_format = request.values.get('format', 'shapefile')
     
     if layer_type == 'occurrences':
         conn = get_db_connection()
@@ -588,6 +955,10 @@ def download_export():
                 'id_evento': p['id'],
                 'title': p['title'],
                 'descricao': p['description'],
+                'origem': p_dict.get('origem') or 'Curadoria',
+                'resp_nome': p_dict.get('responsavel_nome'),
+                'resp_cpf': p_dict.get('responsavel_cpf'),
+                'resp_matr': p_dict.get('responsavel_matricula'),
                 'data_evt': p_dict.get('data_evento'),
                 'tipologia': p_dict.get('tipologia'),
                 'id_pais': p_dict.get('id_pais') or 'Brasil',
@@ -660,8 +1031,6 @@ def download_export():
                 'amb_c_mit': p_dict.get('amb_custo_mitigacao'),
                 'amb_t_rec': p_dict.get('amb_tempo_recuperacao'),
                 'amb_status': p_dict.get('amb_status_recuperacao'),
-                'midia_tipo': p_dict.get('midia_tipo'),
-                'midia_font': p_dict.get('midia_fonte'),
                 'geometry': Point(float(p['lng']), float(p['lat'])) if p['lng'] and p['lat'] else None
             })
             
@@ -716,7 +1085,7 @@ def admin():
         return redirect(url_for('index'))
         
     conn = get_db_connection()
-    users = conn.execute('SELECT id, username, role FROM users').fetchall()
+    users = conn.execute('SELECT * FROM users').fetchall()
     conn.close()
     
     return render_template('admin.html', users=users)
