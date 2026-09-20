@@ -23,10 +23,46 @@ login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login'
 
+DATABASE_URL = os.environ.get('DATABASE_URL')
+
+class DBWrapper:
+    def __init__(self, is_postgres=False):
+        self.is_postgres = is_postgres
+        if self.is_postgres:
+            import psycopg2
+            import psycopg2.extras
+            db_url = DATABASE_URL
+            if db_url.startswith('postgres://'):
+                db_url = db_url.replace('postgres://', 'postgresql://', 1)
+            self.conn = psycopg2.connect(db_url, cursor_factory=psycopg2.extras.DictCursor)
+        else:
+            self.conn = sqlite3.connect('database.db')
+            self.conn.row_factory = sqlite3.Row
+
+    def execute(self, query, params=()):
+        if self.is_postgres:
+            pg_query = query.replace('?', '%s')
+            cursor = self.conn.cursor()
+            cursor.execute(pg_query, params)
+            return cursor
+        else:
+            return self.conn.execute(query, params)
+
+    def commit(self):
+        self.conn.commit()
+
+    def close(self):
+        self.conn.close()
+
 def get_db_connection():
-    conn = sqlite3.connect('database.db')
-    conn.row_factory = sqlite3.Row
-    return conn
+    if DATABASE_URL:
+        try:
+            return DBWrapper(is_postgres=True)
+        except Exception as e:
+            print("Aviso: Conexão PostgreSQL falhou, utilizando SQLite local:", e)
+            return DBWrapper(is_postgres=False)
+    else:
+        return DBWrapper(is_postgres=False)
 
 class User(UserMixin):
     def __init__(self, id, username, role, role_level='user', email='', nome_completo='', telefone='', matricula='', cpf=''):
@@ -62,8 +98,93 @@ def load_user(user_id):
 
 def upgrade_db():
     conn = get_db_connection()
-    
-    # Check users table columns
+    is_pg = getattr(conn, 'is_postgres', False)
+    pk_type = "SERIAL PRIMARY KEY" if is_pg else "INTEGER PRIMARY KEY AUTOINCREMENT"
+
+    try:
+        conn.execute(f'''
+            CREATE TABLE IF NOT EXISTS users (
+                id {pk_type},
+                username TEXT UNIQUE NOT NULL,
+                password TEXT NOT NULL,
+                role TEXT NOT NULL,
+                role_level TEXT DEFAULT 'user',
+                email TEXT,
+                nome_completo TEXT,
+                telefone TEXT,
+                matricula TEXT,
+                cpf TEXT
+            )
+        ''')
+        conn.commit()
+    except Exception as e:
+        print("Aviso na criacao da tabela users:", e)
+
+    try:
+        conn.execute(f'''
+            CREATE TABLE IF NOT EXISTS submissions (
+                id {pk_type},
+                user_id INTEGER,
+                title TEXT,
+                description TEXT,
+                filename TEXT,
+                status TEXT DEFAULT 'pendente',
+                feedback TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                submission_type TEXT DEFAULT 'layer',
+                lat REAL,
+                lng REAL,
+                media_filename TEXT,
+                data_evento TEXT,
+                id_pais TEXT DEFAULT 'Brasil',
+                uf TEXT DEFAULT 'RJ',
+                municipio TEXT DEFAULT 'Angra dos Reis',
+                bairro TEXT,
+                tipologia TEXT,
+                zona TEXT,
+                origem TEXT DEFAULT 'Curadoria',
+                responsavel_nome TEXT,
+                responsavel_cpf TEXT,
+                responsavel_matricula TEXT,
+                responsavel_nivel TEXT
+            )
+        ''')
+        conn.commit()
+    except Exception as e:
+        print("Aviso na criacao da tabela submissions:", e)
+
+    try:
+        conn.execute(f'''
+            CREATE TABLE IF NOT EXISTS layers (
+                id {pk_type},
+                name TEXT NOT NULL,
+                filename TEXT NOT NULL,
+                category TEXT NOT NULL,
+                uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                is_active INTEGER DEFAULT 1
+            )
+        ''')
+        conn.commit()
+    except Exception as e:
+        print("Aviso na criacao da tabela layers:", e)
+
+    try:
+        res = conn.execute('SELECT COUNT(*) FROM users').fetchone()
+        count = res[0] if res else 0
+        if count == 0:
+            default_users = [
+                ('admin', generate_password_hash('admin123'), 'admin', 'admin_geral', 'admin@geoportal.gov.br', 'Administrador Geral', '0000-0000', 'ADM-001', '000.000.000-00'),
+                ('org', generate_password_hash('org123'), 'org', 'org', 'org@parceiro.org', 'Organização Parceira', '1111-1111', 'ORG-001', '111.111.111-11'),
+                ('user', generate_password_hash('user123'), 'user', 'user', 'user@cidadao.br', 'Usuário Registrador', '2222-2222', 'USR-001', '222.222.222-22')
+            ]
+            for u in default_users:
+                conn.execute('''
+                    INSERT INTO users (username, password, role, role_level, email, nome_completo, telefone, matricula, cpf)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', u)
+            conn.commit()
+    except Exception as e:
+        print("Aviso no seed de usuarios:", e)
     users_cols = [
         ('role_level', 'TEXT DEFAULT "user"'),
         ('email', 'TEXT'),
@@ -469,6 +590,147 @@ def upload_shapefile_bulk():
         flash(f'Erro ao processar o arquivo Shapefile: {str(e)}', 'danger')
 
     return redirect(url_for('curadoria'))
+
+@app.route('/upload_bulk_csv', methods=['POST'])
+@login_required
+def upload_bulk_csv():
+    if current_user.role not in ['admin', 'org']:
+        flash('Acesso negado: apenas Administradores e Organizações podem enviar arquivos em lote.', 'danger')
+        return redirect(url_for('index'))
+
+    responsavel_nome = request.form.get('responsavel_nome', '').strip() or current_user.nome_completo or current_user.username
+    responsavel_cpf = request.form.get('responsavel_cpf', '').strip() or current_user.cpf or 'N/A'
+
+    if 'file' not in request.files:
+        flash('Nenhum arquivo enviado.', 'danger')
+        return redirect(url_for('index'))
+
+    file = request.files['file']
+    if file.filename == '' or not file.filename.lower().endswith('.csv'):
+        flash('Formato de arquivo inválido. Por favor, envie um arquivo .csv', 'danger')
+        return redirect(url_for('index'))
+
+    try:
+        filename = secure_filename(file.filename)
+        temp_path = os.path.join(app.config['UPLOAD_FOLDER'], f"bulk_{tempfile.mktemp().split('/')[-1]}_{filename}")
+        file.save(temp_path)
+
+        content = None
+        for encoding in ['utf-8-sig', 'utf-8', 'latin1', 'iso-8859-1']:
+            try:
+                with open(temp_path, mode='r', encoding=encoding) as f:
+                    content = f.read()
+                break
+            except UnicodeDecodeError:
+                continue
+
+        if not content:
+            flash('Erro ao ler a codificação do arquivo CSV.', 'danger')
+            return redirect(url_for('index'))
+
+        import io
+        import csv
+        reader = csv.DictReader(io.StringIO(content))
+        
+        if not reader.fieldnames or len(reader.fieldnames) == 1:
+            first_line = content.splitlines()[0] if content.splitlines() else ''
+            delimiter = ';' if ';' in first_line else ','
+            reader = csv.DictReader(io.StringIO(content), delimiter=delimiter)
+
+        fieldnames = [f.strip() for f in (reader.fieldnames or [])]
+        field_map = {f.lower(): f for f in fieldnames}
+
+        # Identifica colunas de Latitude e Longitude
+        # Prioridade 1: X e Y (Y = Latitude, X = Longitude)
+        lat_col = None
+        lng_col = None
+
+        if 'y' in field_map and 'x' in field_map:
+            lat_col = field_map['y']
+            lng_col = field_map['x']
+        elif 'lat' in field_map and 'lng' in field_map:
+            lat_col = field_map['lat']
+            lng_col = field_map['lng']
+        elif 'latitude' in field_map and 'longitude' in field_map:
+            lat_col = field_map['latitude']
+            lng_col = field_map['longitude']
+        elif 'lat' in field_map and 'lon' in field_map:
+            lat_col = field_map['lat']
+            lng_col = field_map['lon']
+        elif 'y_coord' in field_map and 'x_coord' in field_map:
+            lat_col = field_map['y_coord']
+            lng_col = field_map['x_coord']
+        else:
+            for f_low, f_orig in field_map.items():
+                if f_low in ['y', 'lat', 'latitude']:
+                    lat_col = f_orig
+                elif f_low in ['x', 'lng', 'lon', 'longitude']:
+                    lng_col = f_orig
+
+        if not lat_col or not lng_col:
+            flash('Erro: Não foi possível identificar as colunas de coordenadas no CSV. Certifique-se de que a tabela possui colunas de Coordenadas como X e Y ou Latitude e Longitude.', 'warning')
+            return redirect(url_for('index'))
+
+        conn = get_db_connection()
+        inserted_count = 0
+
+        for idx, row in enumerate(reader):
+            try:
+                raw_lat = str(row.get(lat_col, '')).replace(',', '.').strip()
+                raw_lng = str(row.get(lng_col, '')).replace(',', '.').strip()
+                if not raw_lat or not raw_lng:
+                    continue
+
+                lat = float(raw_lat)
+                lng = float(raw_lng)
+
+                if not (-90 <= lat <= 90) or not (-180 <= lng <= 180):
+                    if (-90 <= lng <= 90) and (-180 <= lat <= 180):
+                        lat, lng = lng, lat
+                    else:
+                        continue
+
+                title = row.get('title') or row.get('titulo') or row.get('nome') or f"Ponto Ocorrência CSV #{idx+1}"
+                tipologia = row.get('tipologia') or row.get('tipo') or "Deslizamento de Encosta"
+                bairro = row.get('bairro') or row.get('local') or "Não Informado"
+                municipio = row.get('municipio') or "Angra dos Reis"
+                uf = row.get('uf') or "RJ"
+                data_evento = row.get('data') or row.get('data_evento') or row.get('data_ocorrencia') or ""
+                description = row.get('descricao') or row.get('description') or row.get('obs') or f"Ponto importado em lote via arquivo CSV por {responsavel_nome}."
+
+                conn.execute('''
+                    INSERT INTO submissions (
+                        user_id, title, description, submission_type, lat, lng, filename, status,
+                        origem, tipologia, municipio, uf, bairro, data_evento,
+                        responsavel_nome, responsavel_cpf, responsavel_matricula, responsavel_nivel
+                    ) VALUES (?, ?, ?, 'point', ?, ?, '', 'aprovado', 'Curadoria', ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    current_user.id, str(title), str(description), float(lat), float(lng),
+                    str(tipologia), str(municipio), str(uf), str(bairro), str(data_evento),
+                    responsavel_nome, responsavel_cpf,
+                    current_user.matricula or 'N/A',
+                    current_user.role_level or current_user.role
+                ))
+                inserted_count += 1
+            except (ValueError, TypeError):
+                continue
+
+        conn.commit()
+        conn.close()
+
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+
+        if inserted_count > 0:
+            flash(f'Sucesso! {inserted_count} pontos de ocorrência da tabela CSV foram importados e integrados à Curadoria.', 'success')
+        else:
+            flash('Nenhum ponto válido com coordenadas numéricas foi encontrado no arquivo CSV.', 'warning')
+
+    except Exception as e:
+        print(f"Erro no processamento do CSV: {e}")
+        flash(f'Erro ao processar o arquivo CSV: {str(e)}', 'danger')
+
+    return redirect(url_for('index'))
 
 @app.route('/api/occurrences')
 @login_required

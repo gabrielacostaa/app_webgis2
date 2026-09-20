@@ -38,6 +38,9 @@
                     <button type="button" class="btn btn-success btn-sm rounded-3 py-2 fw-bold text-white d-flex align-items-center justify-content-center gap-2" data-bs-toggle="modal" data-bs-target="#modalBulkShapefile">
                         <i class="bi bi-file-earmark-zip-fill fs-6"></i> Upload Massivo (Shapefile .zip)
                     </button>
+                    <button type="button" class="btn btn-emerald btn-sm rounded-3 py-2 fw-bold text-white d-flex align-items-center justify-content-center gap-2" style="background-color: #059669; border-color: #059669;" data-bs-toggle="modal" data-bs-target="#modalBulkCsv">
+                        <i class="bi bi-filetype-csv fs-6"></i> Upload Massivo (Tabela CSV)
+                    </button>
                     {% endif %}
                 </div>
             </div>
@@ -180,6 +183,51 @@
                 <div class="modal-footer bg-light p-3 border-top-0">
                     <button type="button" class="btn btn-outline-secondary btn-sm rounded-3" data-bs-dismiss="modal">Cancelar</button>
                     <button type="submit" class="btn btn-success btn-sm rounded-3 px-4 fw-bold text-white">Importar Nuvem de Pontos</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL: Upload Massivo em Tabela CSV (.csv) -->
+<div class="modal fade" id="modalBulkCsv" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content rounded-4 border-0 shadow-lg">
+            <div class="modal-header text-white p-3" style="background-color: #059669;">
+                <h5 class="modal-title fw-bold fs-6"><i class="bi bi-filetype-csv me-2"></i> Upload Massivo via Tabela CSV (.csv)</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <form action="{{ url_for('upload_bulk_csv') }}" method="POST" enctype="multipart/form-data">
+                <div class="modal-body p-4">
+                    <div class="alert alert-success border-0 rounded-3 small mb-3">
+                        <i class="bi bi-info-circle-fill me-1"></i> Envie uma planilha/tabela <strong>.csv</strong> contendo as colunas de coordenadas. São aceitas colunas como <code>X</code> e <code>Y</code> ou <code>Latitude</code> e <code>Longitude</code>.
+                    </div>
+
+                    <div class="p-3 bg-light rounded-3 border mb-3">
+                        <div class="fw-bold small text-dark mb-1">Responsável Associado aos Pontos:</div>
+                        <div class="small"><strong>Agente:</strong> {{ current_user.nome_completo or current_user.username }}</div>
+                        <div class="small"><strong>Nível Defesa Civil:</strong> <span class="badge bg-dark">{{ current_user.role_level }}</span></div>
+                        <div class="small"><strong>CPF:</strong> {{ current_user.cpf or 'N/A' }} | <strong>Matrícula:</strong> {{ current_user.matricula or 'N/A' }}</div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold small">Nome do Responsável Cadastrador <span class="text-danger">*</span></label>
+                        <input type="text" name="responsavel_nome" class="form-control form-control-sm rounded-3" value="{{ current_user.nome_completo or current_user.username }}" required>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold small">CPF do Responsável <span class="text-danger">*</span></label>
+                        <input type="text" name="responsavel_cpf" class="form-control form-control-sm rounded-3" value="{{ current_user.cpf or '' }}" placeholder="000.000.000-00" required>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold small">Arquivo Tabela CSV (.csv) <span class="text-danger">*</span></label>
+                        <input type="file" name="file" class="form-control form-control-sm rounded-3" accept=".csv" required>
+                    </div>
+                </div>
+                <div class="modal-footer bg-light p-3 border-top-0">
+                    <button type="button" class="btn btn-outline-secondary btn-sm rounded-3" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="submit" class="btn btn-success btn-sm rounded-3 px-4 fw-bold text-white">Importar Tabela CSV</button>
                 </div>
             </form>
         </div>
