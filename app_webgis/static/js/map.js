@@ -42,10 +42,22 @@ document.addEventListener("DOMContentLoaded", function() {
         return colors[Math.floor(Math.random() * colors.length)];
     }
 
+    // Função para criar o ícone moderno de ponto de deslizamento (Simbologia Moderna)
+    function createModernPointMarker(latlng) {
+        return L.circleMarker(latlng, {
+            radius: 6.5,
+            fillColor: "#FFFFFF",  // Branco puro
+            color: "#0F172A",      // Contorno escuro elegante
+            weight: 2,
+            opacity: 1.0,
+            fillOpacity: 1.0
+        });
+    }
+
     // Função de montagem de popup genérico para atributos de GeoJSON
     function onEachFeature(feature, layer) {
         if (feature.properties) {
-            let popupContent = '<div style="max-height: 250px; overflow-y: auto;"><table class="table table-sm table-striped" style="font-size:11px;"><tbody>';
+            let popupContent = '<div style="max-height: 260px; overflow-y: auto;"><table class="table table-sm table-striped" style="font-size:11px;"><tbody>';
             for (let p in feature.properties) {
                 popupContent += `<tr><th class="text-secondary">${p}</th><td>${feature.properties[p]}</td></tr>`;
             }
@@ -67,14 +79,21 @@ document.addEventListener("DOMContentLoaded", function() {
             }
 
             layers.forEach(layerData => {
-                const isBoundaryOrBuffer = layerData.filename.toLowerCase().includes('angra') || 
-                                           layerData.filename.toLowerCase().includes('buffer') ||
-                                           layerData.name.toLowerCase().includes('angra') ||
-                                           layerData.name.toLowerCase().includes('buffer') ||
-                                           layerData.name.toLowerCase().includes('limite municipal');
+                const filename = (layerData.filename || '').toLowerCase();
+                const name = (layerData.name || '').toLowerCase();
 
-                const isRegisteredPoints = layerData.filename.toLowerCase().includes('pontos_angra') ||
-                                           layerData.name.toLowerCase().includes('pontos de deslizamento');
+                // Identifica se é a camada de pontos de ocorrência
+                const isRegisteredPoints = filename.includes('pontos') || name.includes('pontos') || name.includes('deslizamento');
+
+                // Identifica se é camada de Limite Municipal ou Buffer (LINHA TRACEJADA VERMELHA E SEM PREENCHIMENTO)
+                const isBoundaryOrBuffer = !isRegisteredPoints && (
+                    filename === 'angra.geojson' ||
+                    filename === 'au_angra_geojson.geojson' ||
+                    filename.includes('buffer') ||
+                    name.includes('buffer') ||
+                    name.includes('limite municipal') ||
+                    name === 'angra dos reis'
+                );
 
                 if (layerListDiv) {
                     const div = document.createElement('div');
@@ -89,10 +108,8 @@ document.addEventListener("DOMContentLoaded", function() {
                     label.className = 'form-check-label ms-2';
                     label.htmlFor = 'layer_' + layerData.id;
                     
-                    let badgeType = isBoundaryOrBuffer ? '<span class="badge bg-danger ms-1">Tracejado Vermelho</span>' : 
-                                    isRegisteredPoints ? '<span class="badge bg-light text-dark border ms-1">Pontos Brancos</span>' : '';
-
-                    label.innerHTML = `<strong>${layerData.name}</strong> ${badgeType}<br><small class="text-muted">${layerData.category}</small>`;
+                    // Exibe APENAS o nome da camada e sua categoria embaixo (sem rótulos de simbologia)
+                    label.innerHTML = `<strong>${layerData.name}</strong><br><small class="text-muted">${layerData.category}</small>`;
                     
                     div.appendChild(input);
                     div.appendChild(label);
@@ -131,14 +148,7 @@ document.addEventListener("DOMContentLoaded", function() {
                                         },
                                         pointToLayer: function (feature, latlng) {
                                             if (isRegisteredPoints) {
-                                                return L.circleMarker(latlng, {
-                                                    radius: 6,
-                                                    fillColor: "#FFFFFF",  // BRANCO
-                                                    color: "#1E293B",      // Contorno escuro elegante
-                                                    weight: 1.5,
-                                                    opacity: 1,
-                                                    fillOpacity: 1.0
-                                                });
+                                                return createModernPointMarker(latlng);
                                             }
                                             return L.circleMarker(latlng, {
                                                 radius: 5,
@@ -154,7 +164,7 @@ document.addEventListener("DOMContentLoaded", function() {
                                     
                                     layerControl.addOverlay(geojsonLayer, layerData.name);
                                     
-                                    if(layerData.filename.includes('angra.geojson')) {
+                                    if(filename === 'angra.geojson' || filename.includes('angra')) {
                                         try { map.fitBounds(geojsonLayer.getBounds()); } catch(e){}
                                     }
                                 })
@@ -163,7 +173,7 @@ document.addEventListener("DOMContentLoaded", function() {
                                 })
                                 .finally(() => {
                                     this.disabled = false;
-                                    label.innerHTML = `<strong>${layerData.name}</strong> ${badgeType}<br><small class="text-muted">${layerData.category}</small>`;
+                                    label.innerHTML = `<strong>${layerData.name}</strong><br><small class="text-muted">${layerData.category}</small>`;
                                 });
                         } else {
                             if (geojsonLayer) {
@@ -184,19 +194,12 @@ document.addEventListener("DOMContentLoaded", function() {
         .then(data => {
             if (data.features && data.features.length > 0) {
                 var markers = L.markerClusterGroup({
-                    maxClusterRadius: 45
+                    maxClusterRadius: 40
                 });
 
                 var geoJsonLayer = L.geoJSON(data, {
                     pointToLayer: function (feature, latlng) {
-                        return L.circleMarker(latlng, {
-                            radius: 7,
-                            fillColor: "#FFFFFF",  // BRANCO
-                            color: "#1E293B",      // Borda escura
-                            weight: 2,
-                            opacity: 1,
-                            fillOpacity: 1.0
-                        });
+                        return createModernPointMarker(latlng);
                     },
                     onEachFeature: function(feature, layer) {
                         let p = feature.properties;
@@ -328,7 +331,6 @@ document.addEventListener("DOMContentLoaded", function() {
                             }
                         }
 
-                        // Strictly Check Exclusão Permission: Allowed ONLY if p.can_delete is TRUE
                         if (p.can_delete) {
                             popupContent += `
                                 <form action="/delete_occurrence/${p.id}" method="POST" onsubmit="return confirm('Deseja realmente excluir esta ocorrência do sistema? Esta ação é irreversível.');">

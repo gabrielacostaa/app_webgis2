@@ -53,7 +53,7 @@ body {
 
 .map-legend-overlay {
     backdrop-filter: blur(8px);
-    background-color: rgba(255, 255, 255, 0.92) !important;
+    background-color: rgba(255, 255, 255, 0.94) !important;
     border-radius: 12px !important;
 }
 
@@ -66,22 +66,54 @@ body {
 
 .legend-point-white {
     display: inline-block;
-    width: 12px;
-    height: 12px;
+    width: 14px;
+    height: 14px;
     border-radius: 50%;
     background-color: #FFFFFF;
-    border: 2px solid #1E293B;
-    box-shadow: 0 0 4px rgba(0,0,0,0.3);
+    border: 2px solid #0F172A;
+    box-shadow: 0 0 6px rgba(0,0,0,0.3);
+}
+
+/* Modern Landslide Point Symbol */
+.modern-landslide-marker-container {
+    background: transparent !important;
+    border: none !important;
+}
+
+.modern-landslide-pin {
+    width: 20px;
+    height: 20px;
+    background-color: #FFFFFF;
+    border: 2.5px solid #0F172A;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.35), 0 0 0 2px rgba(255, 255, 255, 0.8);
+    transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.modern-landslide-pin:hover {
+    transform: scale(1.35);
+    border-color: #DC2626;
+}
+
+.modern-landslide-dot {
+    width: 6px;
+    height: 6px;
+    background-color: #DC2626;
+    border-radius: 50%;
 }
 
 /* Leaflet Cluster Circle White Styling */
 .marker-cluster-small, .marker-cluster-medium, .marker-cluster-large {
-    background-color: rgba(30, 54, 93, 0.6) !important;
+    background-color: rgba(15, 23, 42, 0.65) !important;
 }
 .marker-cluster div {
-    background-color: rgba(255, 255, 255, 0.95) !important;
-    color: #1E365D !important;
+    background-color: rgba(255, 255, 255, 0.96) !important;
+    color: #0F172A !important;
     font-weight: 700 !important;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.2) !important;
 }
 
 /* Cards & Modals */
@@ -96,7 +128,7 @@ body {
 /* Accordion in Leaflet Popups */
 .leaflet-popup-content-wrapper {
     border-radius: 12px !important;
-    box-shadow: 0 10px 25px -5px rgba(0,0,0,0.2) !important;
+    box-shadow: 0 10px 25px -5px rgba(0,0,0,0.25) !important;
     padding: 4px !important;
 }
 
