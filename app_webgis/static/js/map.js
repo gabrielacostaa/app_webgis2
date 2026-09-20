@@ -124,6 +124,127 @@ document.addEventListener("DOMContentLoaded", function() {
                 return;
             }
 
+            // Item especial: Camada de Pontos da Curadoria (Opcional por demanda)
+            const curadoriaDiv = document.createElement('div');
+            curadoriaDiv.className = 'form-check mb-2 p-2 rounded bg-primary-subtle border border-primary border-opacity-25 shadow-sm';
+            
+            const curadoriaInput = document.createElement('input');
+            curadoriaInput.className = 'form-check-input ms-1';
+            curadoriaInput.type = 'checkbox';
+            curadoriaInput.id = 'layer_curadoria_demand';
+            
+            const curadoriaLabel = document.createElement('label');
+            curadoriaLabel.className = 'form-check-label ms-2';
+            curadoriaLabel.htmlFor = 'layer_curadoria_demand';
+            curadoriaLabel.innerHTML = `<strong>Pontos de Deslizamento (Curadoria)</strong><br><small class="text-primary fw-semibold">Ocorrências Validadas (Pinos Azuis)</small>`;
+            
+            curadoriaDiv.appendChild(curadoriaInput);
+            curadoriaDiv.appendChild(curadoriaLabel);
+            layerListDiv.appendChild(curadoriaDiv);
+
+            let curadoriaClusterGroup = null;
+
+            curadoriaInput.addEventListener('change', function() {
+                if (this.checked) {
+                    this.disabled = true;
+                    curadoriaLabel.innerHTML += ' <span class="spinner-border spinner-border-sm text-primary" role="status"></span>';
+
+                    fetch('/api/occurrences')
+                        .then(response => response.json())
+                        .then(data => {
+                            if (data.features && data.features.length > 0) {
+                                curadoriaClusterGroup = L.markerClusterGroup({ maxClusterRadius: 40 });
+
+                                var geoJsonLayer = L.geoJSON(data, {
+                                    pointToLayer: function (feature, latlng) {
+                                        return createBlueGPSMarker(latlng);
+                                    },
+                                    onEachFeature: function(feature, layer) {
+                                        let p = feature.properties;
+                                        let levelName = {
+                                            'admin_geral': 'Administrador Geral',
+                                            'admin_nacional': 'Defesa Civil Nacional',
+                                            'admin_estadual': 'Defesa Civil Estadual',
+                                            'admin_municipal': 'Defesa Civil Municipal',
+                                            'org': 'Organização Parceira',
+                                            'user': 'Usuário Registrador'
+                                        }[p.responsavel_nivel] || p.responsavel_nivel || 'Curador Responsável';
+
+                                        let popupContent = `
+                                            <div style="max-width: 360px; font-size: 11px; max-height: 420px; overflow-y: auto;" class="p-1">
+                                                <div class="d-flex justify-content-between align-items-center mb-1">
+                                                    <span class="badge bg-primary text-white"><i class="bi bi-patch-check-fill"></i> Origem: ${p.origem || 'Curadoria'}</span>
+                                                    <span class="badge bg-secondary">${p.municipio || 'Angra dos Reis'} - ${p.uf || 'RJ'}</span>
+                                                </div>
+
+                                                <h6 class="fw-bold mb-1 text-primary">${p.title || 'Ocorrência Aprovada'}</h6>
+                                                <span class="badge bg-danger mb-2">${p.tipologia || 'Deslizamento de Encosta'}</span>
+                                                
+                                                <div class="p-2 mb-2 rounded bg-light border shadow-sm" style="font-size: 10px;">
+                                                    <div class="fw-bold text-dark mb-1">📋 Responsável Técnico:</div>
+                                                    <div><strong>Nome:</strong> ${p.responsavel_nome || 'Defesa Civil'}</div>
+                                                    <div><strong>Atuação:</strong> <span class="badge bg-dark">${levelName}</span></div>
+                                                    <div><strong>CPF:</strong> ${p.responsavel_cpf || '***.***.***-**'} | <strong>Matrícula:</strong> ${p.responsavel_matricula || 'N/A'}</div>
+                                                </div>
+
+                                                <!-- Botão Gerar Relatório PDF -->
+                                                <a href="/api/occurrence/${p.id}/pdf" target="_blank" class="btn btn-sm btn-primary w-100 mb-2 fw-bold text-white">
+                                                    📄 Gerar Relatório PDF Profissional
+                                                </a>
+
+                                                <div class="mt-2 mb-2 small"><strong>Descrição:</strong> ${p.description || 'Sem descrição complementar.'}</div>
+                                        `;
+
+                                        if (p.media_url) {
+                                            let filename = (p.media_filename || p.media_url).toLowerCase();
+                                            if (filename.endsWith('.mp4') || filename.endsWith('.mov') || filename.endsWith('.webm')) {
+                                                popupContent += `<video width="100%" controls src="${p.media_url}" class="rounded mb-2"></video>`;
+                                            } else {
+                                                popupContent += `<img src="${p.media_url}" width="100%" class="rounded mb-2 shadow-sm">`;
+                                            }
+                                        }
+
+                                        if (p.can_delete) {
+                                            popupContent += `
+                                                <form action="/delete_occurrence/${p.id}" method="POST" onsubmit="return confirm('Deseja realmente excluir esta ocorrência do sistema? Esta ação é irreversível.');">
+                                                    <button type="submit" class="btn btn-sm btn-outline-danger w-100">
+                                                        🗑️ Excluir Ocorrência do Sistema
+                                                    </button>
+                                                </form>
+                                            `;
+                                        }
+
+                                        popupContent += `</div>`;
+                                        layer.bindPopup(popupContent, { maxWidth: 380 });
+                                    }
+                                });
+
+                                curadoriaClusterGroup._layerIdKey = 'curadoria';
+                                curadoriaClusterGroup.legendHtml = '<span class="legend-gps-blue me-1"><i class="bi bi-geo-alt-fill"></i></span><span>Pontos Curadoria (GPS Azul)</span>';
+                                activeLegendItems['curadoria'] = curadoriaClusterGroup.legendHtml;
+
+                                curadoriaClusterGroup.addLayer(geoJsonLayer);
+                                map.addLayer(curadoriaClusterGroup);
+                                updateDynamicLegend();
+                                layerControl.addOverlay(curadoriaClusterGroup, "Pontos de Deslizamento (Curadoria)");
+                            }
+                        })
+                        .catch(err => console.error("Erro ao carregar ocorrências:", err))
+                        .finally(() => {
+                            this.disabled = false;
+                            curadoriaLabel.innerHTML = `<strong>Pontos de Deslizamento (Curadoria)</strong><br><small class="text-primary fw-semibold">Ocorrências Validadas (Pinos Azuis)</small>`;
+                        });
+                } else {
+                    if (curadoriaClusterGroup) {
+                        delete activeLegendItems['curadoria'];
+                        updateDynamicLegend();
+                        map.removeLayer(curadoriaClusterGroup);
+                        layerControl.removeLayer(curadoriaClusterGroup);
+                        curadoriaClusterGroup = null;
+                    }
+                }
+            });
+
             layers.forEach(layerData => {
                 const filename = (layerData.filename || '').toLowerCase();
                 const name = (layerData.name || '').toLowerCase();
@@ -251,174 +372,4 @@ document.addEventListener("DOMContentLoaded", function() {
         })
         .catch(err => console.error("Erro ao buscar camadas:", err));
 
-    // Carregar ocorrências da Curadoria (Aprovadas) e agrupar com MarkerCluster
-    fetch('/api/occurrences')
-        .then(response => response.json())
-        .then(data => {
-            if (data.features && data.features.length > 0) {
-                var markers = L.markerClusterGroup({
-                    maxClusterRadius: 40
-                });
-
-                var geoJsonLayer = L.geoJSON(data, {
-                    pointToLayer: function (feature, latlng) {
-                        // SIMBOLOGIA AZUL (Símbolo GPS Azul) para Pontos da Curadoria
-                        return createBlueGPSMarker(latlng);
-                    },
-                    onEachFeature: function(feature, layer) {
-                        let p = feature.properties;
-                        
-                        let levelName = {
-                            'admin_geral': 'Administrador Geral',
-                            'admin_nacional': 'Defesa Civil Nacional',
-                            'admin_estadual': 'Defesa Civil Estadual',
-                            'admin_municipal': 'Defesa Civil Municipal',
-                            'org': 'Organização Parceira',
-                            'user': 'Usuário Registrador'
-                        }[p.responsavel_nivel] || p.responsavel_nivel || 'Curador Responsável';
-
-                        let popupContent = `
-                            <div style="max-width: 360px; font-size: 11px; max-height: 420px; overflow-y: auto;" class="p-1">
-                                <div class="d-flex justify-content-between align-items-center mb-1">
-                                    <span class="badge bg-primary text-white"><i class="bi bi-patch-check-fill"></i> Origem: ${p.origem || 'Curadoria'}</span>
-                                    <span class="badge bg-secondary">${p.municipio || 'Angra dos Reis'} - ${p.uf || 'RJ'}</span>
-                                </div>
-
-                                <h6 class="fw-bold mb-1 text-primary">${p.title || 'Ocorrência Aprovada'}</h6>
-                                <span class="badge bg-danger mb-2">${p.tipologia || 'Deslizamento de Encosta'}</span>
-                                
-                                <div class="p-2 mb-2 rounded bg-light border shadow-sm" style="font-size: 10px;">
-                                    <div class="fw-bold text-dark mb-1">📋 Responsável Técnico:</div>
-                                    <div><strong>Nome:</strong> ${p.responsavel_nome || 'Defesa Civil'}</div>
-                                    <div><strong>Atuação:</strong> <span class="badge bg-dark">${levelName}</span></div>
-                                    <div><strong>CPF:</strong> ${p.responsavel_cpf || '***.***.***-**'} | <strong>Matrícula:</strong> ${p.responsavel_matricula || 'N/A'}</div>
-                                </div>
-
-                                <!-- Botão Gerar Relatório PDF -->
-                                <a href="/api/occurrence/${p.id}/pdf" target="_blank" class="btn btn-sm btn-primary w-100 mb-2 fw-bold text-white">
-                                    📄 Gerar Relatório PDF Profissional
-                                </a>
-
-                                <div class="accordion accordion-flush mb-2 border rounded" id="popupAccordion_${p.id}">
-                                  <!-- Evento & Localização -->
-                                  <div class="accordion-item">
-                                    <h2 class="accordion-header">
-                                      <button class="accordion-button p-2 text-primary fw-semibold" type="button" data-bs-toggle="collapse" data-bs-target="#c1_${p.id}">
-                                        📌 Evento & Coordenadas
-                                      </button>
-                                    </h2>
-                                    <div id="c1_${p.id}" class="accordion-collapse collapse show">
-                                      <div class="accordion-body p-1">
-                                        <table class="table table-sm table-striped mb-0" style="font-size:10px;">
-                                            <tr><th>Data do Evento</th><td>${p.data_evento || '-'}</td></tr>
-                                            <tr><th>Bairro / Local</th><td>${p.bairro || '-'}</td></tr>
-                                            <tr><th>Zona de Risco</th><td>${p.zona || '-'}</td></tr>
-                                            <tr><th>Coordenadas (Y, X)</th><td>${p.lat}, ${p.lng}</td></tr>
-                                            <tr><th>% Área Atingida</th><td>Urbana: ${p.perc_area_atu || '-'} | Agrícola: ${p.perc_area_atr || '-'}</td></tr>
-                                        </table>
-                                      </div>
-                                    </div>
-                                  </div>
-                                  
-                                  <!-- Clima & Pedologia -->
-                                  <div class="accordion-item">
-                                    <h2 class="accordion-header">
-                                      <button class="accordion-button collapsed p-2 fw-semibold" type="button" data-bs-toggle="collapse" data-bs-target="#c2_${p.id}">
-                                        ⛅ Clima & Pedologia (Solo)
-                                      </button>
-                                    </h2>
-                                    <div id="c2_${p.id}" class="accordion-collapse collapse">
-                                      <div class="accordion-body p-1">
-                                        <table class="table table-sm table-striped mb-0" style="font-size:10px;">
-                                            <tr><th>Precipitação Evento</th><td>${p.clima_precipitacao_evento || '-'} mm</td></tr>
-                                            <tr><th>Precipitação Mensal</th><td>${p.clima_precipitacao_mensal || '-'} mm</td></tr>
-                                            <tr><th>Acumulado 5d / 10d</th><td>${p.clima_precipitacao_5d || '-'} mm / ${p.clima_precipitacao_10d || '-'} mm</td></tr>
-                                            <tr><th>Vento / Temp / Pressão</th><td>${p.clima_vento || '-'} m/s | ${p.clima_temperatura || '-'} ºC | ${p.clima_pressao || '-'} atm</td></tr>
-                                            <tr><th>Classe de Solo (Embrapa)</th><td>${p.ped_classe_solo || '-'}</td></tr>
-                                            <tr><th>Profundidade / Textura</th><td>${p.ped_profundidade || '-'} | ${p.ped_textura || '-'}</td></tr>
-                                            <tr><th>Porosidade / Umidade</th><td>${p.ped_porosidade || '-'} % | ${p.ped_umidade_evento || '-'}</td></tr>
-                                        </table>
-                                      </div>
-                                    </div>
-                                  </div>
-
-                                  <!-- Geologia & Geomorfologia -->
-                                  <div class="accordion-item">
-                                    <h2 class="accordion-header">
-                                      <button class="accordion-button collapsed p-2 fw-semibold" type="button" data-bs-toggle="collapse" data-bs-target="#c3_${p.id}">
-                                        ⛰️ Geologia & Relevo
-                                      </button>
-                                    </h2>
-                                    <div id="c3_${p.id}" class="accordion-collapse collapse">
-                                      <div class="accordion-body p-1">
-                                        <table class="table table-sm table-striped mb-0" style="font-size:10px;">
-                                            <tr><th>Declividade / Altitude</th><td>${p.geo_declividade || '-'} | ${p.geo_altitude || '-'} m</td></tr>
-                                            <tr><th>Forma Terreno / Curvatura</th><td>${p.geo_forma_terreno || '-'} | ${p.geo_curvatura || '-'}</td></tr>
-                                            <tr><th>Tipo de Rocha / Idade</th><td>${p.geol_tipo_rocha || '-'} | ${p.geol_idade || '-'}</td></tr>
-                                            <tr><th>Estrutura / Tectonismo</th><td>${p.geol_estrutura || '-'} | Tectonismo: ${p.geol_tectonismo || '-'}</td></tr>
-                                            <tr><th>Fatores Antrópicos</th><td>Escavação: ${p.antrop_escavacao || '-'} | Mineração: ${p.antrop_mineracao || '-'}</td></tr>
-                                        </table>
-                                      </div>
-                                    </div>
-                                  </div>
-
-                                  <!-- Impactos -->
-                                  <div class="accordion-item">
-                                    <h2 class="accordion-header">
-                                      <button class="accordion-button collapsed p-2 text-danger fw-semibold" type="button" data-bs-toggle="collapse" data-bs-target="#c4_${p.id}">
-                                        💰 Impactos (Soc/Econ/Amb)
-                                      </button>
-                                    </h2>
-                                    <div id="c4_${p.id}" class="accordion-collapse collapse">
-                                      <div class="accordion-body p-1">
-                                        <table class="table table-sm table-striped mb-0" style="font-size:10px;">
-                                            <tr><th>Mortos / Feridos</th><td>${p.n_mortos || 0} mortos | ${p.n_feridos || 0} feridos</td></tr>
-                                            <tr><th>Desalojados / Desabrigados</th><td>${p.soc_n_desalojados || '-'} desalojados | ${p.soc_n_desabrigados || '-'} desabrigados</td></tr>
-                                            <tr><th>Custo Danos Econômicos</th><td>${p.econ_custo_total || '-'} (Recuperação: ${p.econ_custo_recuperacao || '-'})</td></tr>
-                                            <tr><th>Infraestrutura Atingida</th><td>${p.econ_infraestrutura || '-'}</td></tr>
-                                            <tr><th>Impacto Ambiental</th><td>${p.amb_tipo_impacto || '-'} | Área: ${p.amb_area_atingida || '-'} ha</td></tr>
-                                        </table>
-                                      </div>
-                                    </div>
-                                  </div>
-                                </div>
-
-                                <div class="mt-2 mb-2 small"><strong>Descrição:</strong> ${p.description || 'Sem descrição complementar.'}</div>
-                        `;
-
-                        if (p.media_url) {
-                            let filename = (p.media_filename || p.media_url).toLowerCase();
-                            if (filename.endsWith('.mp4') || filename.endsWith('.mov') || filename.endsWith('.webm')) {
-                                popupContent += `<video width="100%" controls src="${p.media_url}" class="rounded mb-2"></video>`;
-                            } else {
-                                popupContent += `<img src="${p.media_url}" width="100%" class="rounded mb-2 shadow-sm">`;
-                            }
-                        }
-
-                        if (p.can_delete) {
-                            popupContent += `
-                                <form action="/delete_occurrence/${p.id}" method="POST" onsubmit="return confirm('Deseja realmente excluir esta ocorrência do sistema? Esta ação é irreversível.');">
-                                    <button type="submit" class="btn btn-sm btn-outline-danger w-100">
-                                        🗑️ Excluir Ocorrência do Sistema
-                                    </button>
-                                </form>
-                            `;
-                        }
-
-                        popupContent += `</div>`;
-                        layer.bindPopup(popupContent, { maxWidth: 380 });
-                    }
-                });
-
-                markers._layerIdKey = 'curadoria';
-                markers.legendHtml = '<span class="legend-gps-blue me-1"><i class="bi bi-geo-alt-fill"></i></span><span>Pontos Curadoria (GPS Azul)</span>';
-                activeLegendItems['curadoria'] = markers.legendHtml;
-
-                markers.addLayer(geoJsonLayer);
-                map.addLayer(markers);
-                updateDynamicLegend();
-                layerControl.addOverlay(markers, "Pontos de Deslizamento (Curadoria)");
-            }
-        })
-        .catch(err => console.error("Erro ao carregar ocorrências:", err));
 });

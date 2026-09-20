@@ -364,8 +364,6 @@ upgrade_db()
 
 @app.route('/')
 def index():
-    if not current_user.is_authenticated:
-        return redirect(url_for('login'))
     conn = get_db_connection()
     layers = conn.execute('SELECT * FROM layers WHERE is_active = 1').fetchall()
     conn.close()
@@ -537,7 +535,6 @@ def upload_file():
     return redirect(url_for('index'))
 
 @app.route('/upload_point', methods=['POST'])
-@login_required
 def upload_point():
     title = request.form.get('title')
     description = request.form.get('description')
@@ -545,6 +542,12 @@ def upload_point():
     lng = request.form.get('lng')
     data_evento = request.form.get('data_evento')
     
+    responsavel_nome = request.form.get('responsavel_nome', '').strip() or (current_user.nome_completo or current_user.username if current_user.is_authenticated else 'Visitante do Geoportal')
+    responsavel_cpf = request.form.get('responsavel_cpf', '').strip() or (current_user.cpf if current_user.is_authenticated else 'N/A')
+    user_id = current_user.id if current_user.is_authenticated else 1
+    role_lvl = (current_user.role_level or current_user.role) if current_user.is_authenticated else 'Visitante'
+    matricula = (current_user.matricula if current_user.is_authenticated else 'N/A')
+
     file = request.files.get('media_file')
     media_filename = None
     if file and file.filename != '':
@@ -561,12 +564,12 @@ def upload_point():
         ) 
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ''', (
-        current_user.id, title, description, 'point', lat, lng, media_filename, '', data_evento, 'Angra dos Reis', 'RJ',
+        user_id, title, description, 'point', lat, lng, media_filename, '', data_evento, 'Angra dos Reis', 'RJ',
         'Curadoria',
-        current_user.nome_completo or current_user.username,
-        current_user.cpf or 'N/A',
-        current_user.matricula or 'N/A',
-        current_user.role_level or current_user.role
+        responsavel_nome,
+        responsavel_cpf,
+        matricula,
+        role_lvl
     ))
     conn.commit()
     conn.close()
@@ -798,7 +801,6 @@ def upload_bulk_csv():
     return redirect(url_for('index'))
 
 @app.route('/api/occurrences')
-@login_required
 def get_occurrences():
     conn = get_db_connection()
     points = conn.execute("SELECT * FROM submissions WHERE submission_type = 'point' AND status = 'aprovado'").fetchall()
@@ -809,7 +811,7 @@ def get_occurrences():
         p_dict = dict(p)
         media_url = url_for('serve_layer', filename=p['media_filename']) if p['media_filename'] else p_dict.get('midia_url')
         
-        can_delete = (current_user.role_level == 'admin_geral') or (current_user.id == p['user_id'])
+        can_delete = current_user.is_authenticated and (current_user.role_level == 'admin_geral' or current_user.id == p['user_id'])
         
         props = {
             "id": p['id'],
@@ -1129,7 +1131,6 @@ def delete_occurrence(sub_id):
 # --- Download / Exportação ---
 
 @app.route('/download_export', methods=['GET', 'POST'])
-@login_required
 def download_export():
     layer_type = request.values.get('layer_type', 'occurrences')
     municipio_filter = request.values.get('municipio', 'Todos')
