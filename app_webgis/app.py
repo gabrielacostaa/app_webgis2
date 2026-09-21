@@ -1107,9 +1107,15 @@ def get_occurrences():
             m_list.insert(0, p['media_filename'])
 
         media_urls = [url_for('serve_layer', filename=fn) for fn in m_list if fn]
-        primary_media_url = media_urls[0] if media_urls else (p_dict.get('midia_url') or '')
-        
-        can_delete = current_user.is_authenticated and (current_user.role_level == 'admin_geral' or current_user.id == p['user_id'])
+        is_admin_geral = current_user.is_authenticated and (current_user.role_level == 'admin_geral')
+        is_gestor = current_user.is_authenticated and (current_user.role in ['admin', 'org'] or getattr(current_user, 'funcao', 'agente') in ['gestor', 'gestor_agente'])
+        is_owner = current_user.is_authenticated and (current_user.id == p['user_id'])
+        sub_sphere = p_dict.get('responsavel_nivel') or p_dict.get('u_role_level') or ''
+        u_sphere = (getattr(current_user, 'role_level', '') or '').replace('agente_', 'admin_')
+        s_sphere = sub_sphere.replace('agente_', 'admin_')
+        is_same_sphere = bool(u_sphere and u_sphere == s_sphere)
+
+        can_delete = is_admin_geral or (is_gestor and is_same_sphere) or is_owner
         
         props = {
             "id": p['id'],
@@ -1615,17 +1621,18 @@ def delete_occurrence(sub_id):
 
     is_admin_geral = (current_user.role_level == 'admin_geral')
     is_gestor = (current_user.role in ['admin', 'org'] or getattr(current_user, 'funcao', 'agente') in ['gestor', 'gestor_agente'])
+    is_owner = (current_user.id == sub['user_id'])
     
     sub_sphere = sub['responsavel_nivel'] or sub['u_role_level'] or ''
     u_sphere = (current_user.role_level or '').replace('agente_', 'admin_')
     s_sphere = sub_sphere.replace('agente_', 'admin_')
     is_same_sphere = (u_sphere == s_sphere)
 
-    can_delete = is_admin_geral or (is_gestor and is_same_sphere)
+    can_delete = is_admin_geral or (is_gestor and is_same_sphere) or is_owner
 
     if not can_delete:
         conn.close()
-        flash('Acesso Negado: Apenas o Administrador Geral ou os Gestores da respectiva esfera podem excluir ocorrências.', 'danger')
+        flash('Acesso Negado: Você só pode excluir ocorrências que você mesmo cadastrou ou da sua esfera de gestão.', 'danger')
         return redirect(request.referrer or url_for('index'))
 
     conn.execute('DELETE FROM submissions WHERE id = ?', (sub_id,))

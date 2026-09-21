@@ -72,7 +72,7 @@
 
                             {% set can_edit = is_admin_geral or (is_gestor and is_same_sphere) or is_owner %}
                             {% set can_approve = is_admin_geral or (is_gestor and is_same_sphere) %}
-                            {% set can_delete = is_admin_geral or (is_gestor and is_same_sphere) %}
+                            {% set can_delete = is_admin_geral or (is_gestor and is_same_sphere) or is_owner %}
 
                             <tr>
                                 <td class="ps-4">
