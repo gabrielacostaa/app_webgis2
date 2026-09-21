@@ -590,6 +590,51 @@ def generate_changes_docx(filepath="app_webgis/relatorio_mudancas_hoje.docx"):
         p.paragraph_format.line_spacing = 1.15
         p.paragraph_format.space_after = Pt(6)
 
+    doc.add_paragraph().paragraph_format.space_after = Pt(12)
+
+    # --- Seção 2: Credenciais ---
+    h1_2 = doc.add_heading(level=1)
+    r_h1_2 = h1_2.add_run("2. Credenciais de Acesso Padrão (Usuários e Senhas)")
+    r_h1_2.font.color.rgb = RGBColor(0x1B, 0x36, 0x5D)
+
+    p_cred = doc.add_paragraph(
+        "Para a realização de testes, validações por bancas examinadoras e demonstrações operacionais, "
+        "o sistema possui as seguintes contas institucionais pré-configuradas:"
+    )
+    p_cred.paragraph_format.line_spacing = 1.15
+    p_cred.paragraph_format.space_after = Pt(8)
+
+    # Tabela de Credenciais
+    tbl_cred = doc.add_table(rows=1, cols=5)
+    tbl_cred.alignment = WD_TABLE_ALIGNMENT.CENTER
+    c_hdr = tbl_cred.rows[0].cells
+    c_titles = ['Perfil / Esfera', 'Nome de Usuário', 'E-mail de Login', 'Senha Inicial', 'Função / Escopo']
+    for i, title in enumerate(c_titles):
+        c_hdr[i].text = title
+        set_cell_background(c_hdr[i], "1B365D")
+        for paragraph in c_hdr[i].paragraphs:
+            for run in paragraph.runs:
+                run.font.bold = True
+                run.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
+
+    cred_data = [
+        ("Administrador Geral", "admin", "admin.geral@geoportal.gov.br", "Admin@123", "Gestão global de todas as esferas e dados."),
+        ("Gestor Nacional", "defesa_nacional", "nacional@defesacivil.gov.br", "Defesa@123", "Gestão e cadastro de agentes na esfera Nacional."),
+        ("Gestor Estadual", "defesa_estadual", "estadual@defesacivil.rj.gov.br", "Defesa@123", "Gestão e cadastro de agentes na esfera Estadual RJ."),
+        ("Gestor Municipal", "defesa_municipal", "defesacivil@angra.rj.gov.br", "Defesa@123", "Gestão e cadastro de agentes na esfera Municipal."),
+        ("Organização Parceira", "org", "contato@orgamb.org.br", "Org@123", "Gestão técnica de relatórios e dados da ONG."),
+        ("Agente de Campo", "user", "usuario@email.com", "User@123", "Coleta de campo (1-ponto/Shape/CSV) e edição de pontos próprios.")
+    ]
+
+    for r_idx, r_data in enumerate(cred_data):
+        row_cells = tbl_cred.add_row().cells
+        fill_hex = "F0F4F8" if r_idx % 2 == 0 else "FFFFFF"
+        for i, text in enumerate(r_data):
+            row_cells[i].text = text
+            set_cell_background(row_cells[i], fill_hex)
+
+    doc.add_paragraph().paragraph_format.space_after = Pt(12)
+
     doc.save(filepath)
     print(f"Relatório de Mudanças DOCX salvo em: {filepath}")
 
