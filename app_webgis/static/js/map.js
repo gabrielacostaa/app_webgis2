@@ -196,26 +196,34 @@ document.addEventListener("DOMContentLoaded", function() {
                                              `;
                                          }
 
-                                         let climaHtml = fmtRow('Precipitação Evento', p.clima_precipitacao_evento ? p.clima_precipitacao_evento + ' mm' : '') +
-                                                         fmtRow('Precipitação Mensal', p.clima_precipitacao_mensal ? p.clima_precipitacao_mensal + ' mm' : '') +
-                                                         fmtRow('Acumulado 5d', p.clima_precipitacao_5d ? p.clima_precipitacao_5d + ' mm' : '') +
-                                                         fmtRow('Acumulado 10d', p.clima_precipitacao_10d ? p.clima_precipitacao_10d + ' mm' : '') +
-                                                         fmtRow('Vento', p.clima_vento ? p.clima_vento + ' m/s' : '') +
-                                                         fmtRow('Temperatura', p.clima_temperatura ? p.clima_temperatura + ' ºC' : '') +
-                                                         fmtRow('Pressão', p.clima_pressao ? p.clima_pressao + ' atm' : '') +
+                                         function withUnit(val, unit, prefix = false) {
+                                             if (val === null || val === undefined) return '';
+                                             let strVal = String(val).trim();
+                                             if (strVal === '' || strVal === '0') return '';
+                                             if (strVal.toLowerCase().includes(unit.toLowerCase())) return strVal;
+                                             return prefix ? `${unit} ${strVal}` : `${strVal} ${unit}`;
+                                         }
+
+                                         let climaHtml = fmtRow('Precipitação Evento', withUnit(p.clima_precipitacao_evento, 'mm')) +
+                                                         fmtRow('Precipitação Mensal', withUnit(p.clima_precipitacao_mensal, 'mm')) +
+                                                         fmtRow('Acumulado 5d', withUnit(p.clima_precipitacao_5d, 'mm')) +
+                                                         fmtRow('Acumulado 10d', withUnit(p.clima_precipitacao_10d, 'mm')) +
+                                                         fmtRow('Vento', withUnit(p.clima_vento, 'm/s')) +
+                                                         fmtRow('Temperatura', withUnit(p.clima_temperatura, 'ºC')) +
+                                                         fmtRow('Pressão', withUnit(p.clima_pressao, 'atm')) +
                                                          fmtRow('Evapotranspiração', p.clima_evapotranspiracao);
 
                                          let soloHtml = fmtRow('Classe do Solo', p.ped_classe_solo) +
-                                                        fmtRow('Profundidade Regolito', p.ped_profundidade) +
+                                                        fmtRow('Profundidade Regolito', withUnit(p.ped_profundidade, 'm')) +
                                                         fmtRow('Textura', p.ped_textura) +
-                                                        fmtRow('Porosidade', p.ped_porosidade) +
+                                                        fmtRow('Porosidade', withUnit(p.ped_porosidade, '%')) +
                                                         fmtRow('UCC', p.ped_ucc) +
                                                         fmtRow('CAD', p.ped_cad) +
                                                         fmtRow('Permeabilidade K', p.ped_k) +
-                                                        fmtRow('Umidade no Evento', p.ped_umidade_evento);
+                                                        fmtRow('Umidade no Evento', withUnit(p.ped_umidade_evento, '%'));
 
-                                         let relevoHtml = fmtRow('Declividade', p.geo_declividade ? p.geo_declividade + '%' : '') +
-                                                          fmtRow('Altitude', p.geo_altitude ? p.geo_altitude + ' m' : '') +
+                                         let relevoHtml = fmtRow('Declividade', withUnit(p.geo_declividade, '%')) +
+                                                          fmtRow('Altitude', withUnit(p.geo_altitude, 'm')) +
                                                           fmtRow('Forma do Terreno', p.geo_forma_terreno) +
                                                           fmtRow('Orientação Encosta', p.geo_orientacao) +
                                                           fmtRow('Curvatura', p.geo_curvatura) +
@@ -229,22 +237,22 @@ document.addEventListener("DOMContentLoaded", function() {
                                                           fmtRow('Uso do Solo', p.antrop_tipo_uso) +
                                                           fmtRow('Mineração', p.antrop_mineracao);
 
-                                         let econHtml = fmtRow('Custo Total Est.', p.econ_custo_total ? 'R$ ' + p.econ_custo_total : '') +
+                                         let econHtml = fmtRow('Custo Total Est.', withUnit(p.econ_custo_total, 'R$', true)) +
                                                         fmtRow('Infraestrutura Afetada', p.econ_infraestrutura) +
                                                         fmtRow('Patrimônio Privado', p.econ_patrimonio_privado) +
                                                         fmtRow('Patrimônio Público', p.econ_patrimonio_publico) +
                                                         fmtRow('Danos Agrícolas', p.econ_agri_cultura) +
-                                                        fmtRow('Custo Recuperação', p.econ_custo_recuperacao ? 'R$ ' + p.econ_custo_recuperacao : '') +
+                                                        fmtRow('Custo Recuperação', withUnit(p.econ_custo_recuperacao, 'R$', true)) +
                                                         fmtRow('Interrupção Serviços', p.econ_interrupcao_setores);
 
                                          let socHtml = fmtRow('Mortos', p.n_mortos) +
                                                        fmtRow('Feridos', p.n_feridos) +
-                                                       fmtRow('Desalojados', p.soc_n_desalojados) +
-                                                       fmtRow('Desabrigados', p.soc_n_desabrigados) +
-                                                       fmtRow('Desaparecidos', p.soc_n_desaparecidos) +
+                                                       fmtRow('Desalojados', withUnit(p.soc_n_desalojados, 'desalojados')) +
+                                                       fmtRow('Desabrigados', withUnit(p.soc_n_desabrigados, 'desabrigados')) +
+                                                       fmtRow('Desaparecidos', withUnit(p.soc_n_desaparecidos, 'desaparecidos')) +
                                                        fmtRow('Famílias Atingidas', p.soc_n_familias) +
                                                        fmtRow('Impacto Ambiental', p.amb_tipo_impacto) +
-                                                       fmtRow('Área Atingida Amb.', p.amb_area_atingida) +
+                                                       fmtRow('Área Atingida Amb.', withUnit(p.amb_area_atingida, 'ha')) +
                                                        fmtRow('Status Recuperação', p.amb_status_recuperacao);
 
                                          let dictAccordionHtml = fmtSection('clima', 'Clima & Meteorologia', '⛅', climaHtml) +
@@ -271,10 +279,10 @@ document.addEventListener("DOMContentLoaded", function() {
                                                      <div><strong>CPF:</strong> ${p.responsavel_cpf || '***.***.***-**'} | <strong>Matrícula:</strong> ${p.responsavel_matricula || 'N/A'}</div>
                                                  </div>
 
-                                                 <!-- Botão Gerar Relatório PDF -->
-                                                 <a href="/api/occurrence/${p.id}/pdf" target="_blank" class="btn btn-sm btn-primary w-100 mb-2 fw-bold text-white">
-                                                     📄 Gerar Relatório PDF Profissional
-                                                 </a>
+                                                 <!-- Botão Gerar / Pré-visualizar Relatório PDF -->
+                                                 <button type="button" onclick="previewPdfReport(${p.id})" class="btn btn-sm btn-primary w-100 mb-2 fw-bold text-white shadow-sm">
+                                                     📄 Pré-visualizar / Gerar Relatório PDF
+                                                 </button>
 
                                                  <div class="mt-2 mb-2 small"><strong>Descrição:</strong> ${p.description || 'Sem descrição complementar.'}</div>
                                          `;
@@ -473,3 +481,23 @@ document.addEventListener("DOMContentLoaded", function() {
         .catch(err => console.error("Erro ao buscar camadas:", err));
 
 });
+
+window.previewPdfReport = function(pointId) {
+    const pdfUrl = `/api/occurrence/${pointId}/pdf`;
+    const frame = document.getElementById('pdfPreviewFrame');
+    const dlBtn = document.getElementById('btnDownloadPdfModal');
+    if (frame) {
+        frame.src = pdfUrl;
+    }
+    if (dlBtn) {
+        dlBtn.href = pdfUrl;
+    }
+    const modalEl = document.getElementById('modalPdfPreview');
+    if (modalEl) {
+        const modal = new bootstrap.Modal(modalEl);
+        modal.show();
+    } else {
+        window.open(pdfUrl, '_blank');
+    }
+};
+

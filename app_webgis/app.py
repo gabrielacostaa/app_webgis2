@@ -1106,7 +1106,7 @@ def occurrence_pdf(point_id):
         return send_from_directory(
             tmpdir,
             f"relatorio_ocorrencia_{point_id}.pdf",
-            as_attachment=True,
+            as_attachment=False,
             mimetype='application/pdf'
         )
 

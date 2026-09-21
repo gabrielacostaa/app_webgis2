@@ -219,26 +219,34 @@ def generate_occurrence_pdf(data, output_path, upload_folder="static/uploads"):
         ]))
         return t
 
+    def fmt_unit(val, unit, prefix=False):
+        if val is None or str(val).strip() in ['', 'None', '-', '0']:
+            return '-'
+        s = str(val).strip()
+        if unit.lower() in s.lower():
+            return s
+        return f"{unit} {s}" if prefix else f"{s} {unit}"
+
     # Domínio 1 & 2: Clima & Pedologia
     t_clima = build_domain_table("1. Fatores Climáticos e Pluviosidade", [
-        ("Precipitação do Evento (mm):", data.get('clima_precipitacao_evento')),
-        ("Precipitação Mensal (mm):", data.get('clima_precipitacao_mensal')),
-        ("Acumulado 5 Dias / 10 Dias (mm):", f"{data.get('clima_precipitacao_5d') or '-'} mm / {data.get('clima_precipitacao_10d') or '-'} mm"),
-        ("Vento (m/s) / Temperatura (ºC) / Pressão:", f"{data.get('clima_vento') or '-'} m/s | {data.get('clima_temperatura') or '-'} ºC | {data.get('clima_pressao') or '-'} atm")
+        ("Precipitação do Evento:", fmt_unit(data.get('clima_precipitacao_evento'), 'mm')),
+        ("Precipitação Mensal:", fmt_unit(data.get('clima_precipitacao_mensal'), 'mm')),
+        ("Acumulado 5 Dias / 10 Dias:", f"{fmt_unit(data.get('clima_precipitacao_5d'), 'mm')} / {fmt_unit(data.get('clima_precipitacao_10d'), 'mm')}"),
+        ("Vento / Temperatura / Pressão:", f"{fmt_unit(data.get('clima_vento'), 'm/s')} | {fmt_unit(data.get('clima_temperatura'), 'ºC')} | {fmt_unit(data.get('clima_pressao'), 'atm')}")
     ])
     
     t_pedologia = build_domain_table("2. Pedologia (Caracterização do Solo)", [
         ("Classe de Solo (Embrapa):", data.get('ped_classe_solo')),
-        ("Profundidade do Regolito / Textura:", f"{data.get('ped_profundidade') or '-'} | {data.get('ped_textura') or '-'}"),
-        ("Porosidade / Umidade no Evento:", f"{data.get('ped_porosidade') or '-'} % | {data.get('ped_umidade_evento') or '-'}")
+        ("Profundidade do Regolito / Textura:", f"{fmt_unit(data.get('ped_profundidade'), 'm')} | {data.get('ped_textura') or '-'}"),
+        ("Porosidade / Umidade no Evento:", f"{fmt_unit(data.get('ped_porosidade'), '%')} | {fmt_unit(data.get('ped_umidade_evento'), '%')}")
     ])
 
     story.append(KeepTogether([t_clima, Spacer(1, 8), t_pedologia, Spacer(1, 10)]))
 
     # Domínio 3 & 4: Geomorfologia & Geologia
     t_geo = build_domain_table("3. Geomorfologia e Relevo", [
-        ("Declividade Encosta (% ou Graus):", data.get('geo_declividade')),
-        ("Altitude (metros) / Orientação:", f"{data.get('geo_altitude') or '-'} m | {data.get('geo_orientacao') or '-'}"),
+        ("Declividade Encosta:", fmt_unit(data.get('geo_declividade'), '%')),
+        ("Altitude (metros) / Orientação:", f"{fmt_unit(data.get('geo_altitude'), 'm')} | {data.get('geo_orientacao') or '-'}"),
         ("Forma do Terreno / Curvatura:", f"{data.get('geo_forma_terreno') or '-'} | {data.get('geo_curvatura') or '-'}")
     ])
     
@@ -259,22 +267,22 @@ def generate_occurrence_pdf(data, output_path, upload_folder="static/uploads"):
     
     t_soc = build_domain_table("6. Impactos Sociais e Vítimas", [
         ("Vítimas Fatais / Feridos:", f"{data.get('n_mortos') or 0} mortos | {data.get('n_feridos') or 0} feridos"),
-        ("Famílias Afetadas / Desalojados:", f"{data.get('soc_n_familias') or '-'} famílias | {data.get('soc_n_desalojados') or '-'} desalojados"),
-        ("Desabrigados / Desaparecidos:", f"{data.get('soc_n_desabrigados') or '-'} desabrigados | {data.get('soc_n_desaparecidos') or '-'} desaparecidos")
+        ("Famílias Afetadas / Desalojados:", f"{data.get('soc_n_familias') or '-'} famílias | {fmt_unit(data.get('soc_n_desalojados'), 'desalojados')}"),
+        ("Desabrigados / Desaparecidos:", f"{fmt_unit(data.get('soc_n_desabrigados'), 'desabrigados')} | {fmt_unit(data.get('soc_n_desaparecidos'), 'desaparecidos')}")
     ])
 
     story.append(KeepTogether([t_antrop, Spacer(1, 8), t_soc, Spacer(1, 10)]))
 
     # Domínio 7 & 8: Econômicos & Ambientais
     t_econ = build_domain_table("7. Impactos Econômicos e Danos Materiais", [
-        ("Estimativa Custo Total Danos:", data.get('econ_custo_total')),
+        ("Estimativa Custo Total Danos:", fmt_unit(data.get('econ_custo_total'), 'R$', prefix=True)),
         ("Infraestrutura Pública Atingida:", data.get('econ_infraestrutura')),
-        ("Danos Agrícolas / Cultura Atingida:", f"{data.get('econ_agri_cultura') or '-'} (Área: {data.get('econ_agri_area_atingida') or '-'})")
+        ("Danos Agrícolas / Custo Recuperação:", f"{data.get('econ_agri_cultura') or '-'} | Custo Rec.: {fmt_unit(data.get('econ_custo_recuperacao'), 'R$', prefix=True)}")
     ])
 
     t_amb = build_domain_table("8. Impactos Ambientais", [
         ("Tipo de Impacto Ambiental:", data.get('amb_tipo_impacto')),
-        ("Área Atingida (ha) / Recursos Afetados:", f"{data.get('amb_area_atingida') or '-'} ha | {data.get('amb_recursos_afetados') or '-'}"),
+        ("Área Atingida / Recursos Afetados:", f"{fmt_unit(data.get('amb_area_atingida'), 'ha')} | {data.get('amb_recursos_afetados') or '-'}"),
         ("Dano à Biodiversidade / Status Recuperação:", f"{data.get('amb_dano_biodiversidade') or '-'} | {data.get('amb_status_recuperacao') or '-'}")
     ])
 
@@ -294,22 +302,35 @@ def generate_occurrence_pdf(data, output_path, upload_folder="static/uploads"):
     story.append(t_desc)
     story.append(Spacer(1, 10))
 
-    # Check for image media
-    media_filename = data.get('media_filename')
-    if media_filename:
-        media_path = os.path.join(upload_folder, media_filename)
-        if os.path.exists(media_path) and media_filename.lower().endswith(('.jpg', '.jpeg', '.png', '.gif')):
-            try:
-                img = Image(media_path, width=4.5*inch, height=3.0*inch)
-                img.hAlign = 'CENTER'
-                story.append(KeepTogether([
-                    Paragraph("<b>10. Evidência Fotográfica Registrada em Campo</b>", section_heading),
-                    img,
-                    Spacer(1, 8)
-                ]))
-            except Exception as e:
-                print(f"Erro ao incluir imagem no PDF: {e}")
+    # Check for image media list
+    import json
+    media_files = []
+    if data.get('media_files_json'):
+        try:
+            media_files = json.loads(data['media_files_json'])
+        except Exception:
+            pass
+    if not media_files and data.get('media_filename'):
+        media_files = [data['media_filename']]
+
+    image_elements = []
+    for mfile in media_files:
+        if mfile and mfile.lower().endswith(('.jpg', '.jpeg', '.png', '.webp', '.gif')):
+            mpath = os.path.join(upload_folder, mfile)
+            if os.path.exists(mpath):
+                try:
+                    img = Image(mpath, width=4.0*inch, height=2.6*inch)
+                    img.hAlign = 'CENTER'
+                    image_elements.append(img)
+                except Exception as e:
+                    print(f"Erro ao incluir imagem {mfile} no PDF: {e}")
+
+    if image_elements:
+        story.append(Paragraph(f"<b>10. Evidências Fotográficas Registradas ({len(image_elements)} foto(s))</b>", section_heading))
+        for img_el in image_elements:
+            story.append(KeepTogether([img_el, Spacer(1, 8)]))
 
     # Build Document
     doc.build(story, canvasmaker=NumberedCanvas)
     return output_path
+
