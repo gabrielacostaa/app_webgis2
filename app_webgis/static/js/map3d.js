@@ -12,11 +12,15 @@ document.addEventListener("DOMContentLoaded", function () {
         if (!cesiumViewer) {
             initCesium3DViewer();
         } else {
-            cesiumViewer.resize();
+            try {
+                cesiumViewer.resize();
+            } catch(e) {
+                console.log("Resize error:", e);
+            }
         }
     });
 
-    function createPinDataUrl(colorHex, labelText) {
+    function createPinDataUrl(colorHex) {
         const canvas = document.createElement("canvas");
         canvas.width = 48;
         canvas.height = 64;
@@ -58,58 +62,70 @@ document.addEventListener("DOMContentLoaded", function () {
         const container = document.getElementById("cesiumContainer");
         if (!container) return;
 
-        // Desativar Ion token prompt usando Provedor Aberto Esri World Imagery
-        Cesium.Ion.defaultAccessToken = '';
-
-        const esriImageryProvider = new Cesium.ArcGisMapServerImageryProvider({
-            url: 'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer',
-            enablePickFeatures: false
-        });
-
-        cesiumViewer = new Cesium.Viewer("cesiumContainer", {
-            imageryProvider: esriImageryProvider,
-            baseLayerPicker: false,
-            geocoder: false,
-            homeButton: false,
-            sceneModePicker: true,
-            navigationHelpButton: false,
-            animation: false,
-            timeline: false,
-            fullscreenButton: false,
-            infoBox: true,
-            selectionIndicator: true,
-            terrainProvider: new Cesium.EllipsoidTerrainProvider()
-        });
-
-        // Tentar ativar terreno global com relevo 3D caso disponível
         try {
-            Cesium.createWorldTerrainAsync({
-                requestWaterMask: false,
-                requestVertexNormals: true
-            }).then(terrain => {
-                if (cesiumViewer) cesiumViewer.terrainProvider = terrain;
-            }).catch(err => {
-                console.log("Usando terreno padrão 3D:", err);
+            Cesium.Ion.defaultAccessToken = '';
+
+            const esriImageryProvider = new Cesium.UrlTemplateImageryProvider({
+                url: 'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+                credit: 'Esri World Imagery'
             });
-        } catch(e) {
-            console.log("Cesium World Terrain fallback:", e);
+
+            cesiumViewer = new Cesium.Viewer("cesiumContainer", {
+                imageryProvider: esriImageryProvider,
+                baseLayerPicker: false,
+                geocoder: false,
+                homeButton: false,
+                sceneModePicker: true,
+                navigationHelpButton: false,
+                animation: false,
+                timeline: false,
+                fullscreenButton: false,
+                infoBox: true,
+                selectionIndicator: true,
+                terrainProvider: new Cesium.EllipsoidTerrainProvider()
+            });
+
+            // Tentar ativar terreno global com relevo 3D caso disponível
+            if (Cesium.createWorldTerrainAsync) {
+                Cesium.createWorldTerrainAsync({
+                    requestWaterMask: false,
+                    requestVertexNormals: true
+                }).then(terrain => {
+                    if (cesiumViewer && !cesiumViewer.isDestroyed()) {
+                        cesiumViewer.terrainProvider = terrain;
+                    }
+                }).catch(err => {
+                    console.log("Usando terreno esférico padrão:", err);
+                });
+            }
+
+            // Posicionar câmera inicialmente sobre Angra dos Reis (Ângulo de Visão Oblíqua 3D)
+            flyToAngra();
+
+            // Carregar pontos de ocorrência
+            load3DOccurrences();
+
+            // Configurar botões de ação do Modal 3D
+            const btnFlyTo = document.getElementById("btn3DFlyToAngra");
+            if (btnFlyTo) btnFlyTo.onclick = flyToAngra;
+
+            const btnTilt = document.getElementById("btn3DTiltOrbit");
+            if (btnTilt) btnTilt.onclick = tiltOrbitCamera;
+
+            const btnRefresh = document.getElementById("btn3DRefresh");
+            if (btnRefresh) btnRefresh.onclick = load3DOccurrences;
+
+        } catch (err) {
+            console.error("Erro ao inicializar Cesium 3D:", err);
+            container.innerHTML = `
+                <div class="d-flex flex-column align-items-center justify-content-center h-100 text-white p-4 text-center" style="background:#0f172a;">
+                    <i class="bi bi-exclamation-triangle-fill text-warning fs-1 mb-3"></i>
+                    <h5 class="fw-bold">Não foi possível carregar o motor 3D neste navegador</h5>
+                    <p class="text-muted small mb-0">Verifique se a aceleração de hardware (WebGL) está ativada nas configurações do seu navegador.</p>
+                    <p class="text-danger small mt-2">Erro detalhado: ${err.message || err}</p>
+                </div>
+            `;
         }
-
-        // Posicionar câmera inicialmente sobre Angra dos Reis (Ângulo de Visão Oblíqua 3D)
-        flyToAngra();
-
-        // Carregar pontos de ocorrência
-        load3DOccurrences();
-
-        // Configurar botões de ação do Modal 3D
-        const btnFlyTo = document.getElementById("btn3DFlyToAngra");
-        if (btnFlyTo) btnFlyTo.addEventListener("click", flyToAngra);
-
-        const btnTilt = document.getElementById("btn3DTiltOrbit");
-        if (btnTilt) btnTilt.addEventListener("click", tiltOrbitCamera);
-
-        const btnRefresh = document.getElementById("btn3DRefresh");
-        if (btnRefresh) btnRefresh.addEventListener("click", load3DOccurrences);
     }
 
     function flyToAngra() {
@@ -151,7 +167,7 @@ document.addEventListener("DOMContentLoaded", function () {
         const statusSpan = document.getElementById("status3DLoading");
         if (statusSpan) statusSpan.style.display = "inline-block";
 
-        const pinBlueUrl = createPinDataUrl("#0284c7", "P");
+        const pinBlueUrl = createPinDataUrl("#0284c7");
 
         fetch("/api/occurrences")
             .then(res => res.json())
@@ -241,7 +257,7 @@ document.addEventListener("DOMContentLoaded", function () {
                             verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
                             heightReference: Cesium.HeightReference.NONE,
                             scale: 0.85,
-                            disableDepthTestDistance: Number.POSITIVE_INFINITY // Garante visibilidade sobre o terreno 3D
+                            disableDepthTestDistance: Number.POSITIVE_INFINITY
                         },
                         description: descriptionHtml
                     });
