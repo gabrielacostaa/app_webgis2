@@ -1678,16 +1678,18 @@ def download_export():
 @login_required
 def admin():
     if current_user.role not in ['admin', 'org']:
-        flash('Acesso negado. Apenas curadores e gestores da Defesa Civil podem gerenciar agentes.', 'danger')
+        flash('Acesso negado. Apenas gestores da Defesa Civil podem acessar a gestão de usuários.', 'danger')
         return redirect(url_for('index'))
         
     conn = get_db_connection()
     if current_user.role_level == 'admin_geral':
         users = conn.execute('SELECT * FROM users ORDER BY id ASC').fetchall()
     else:
+        sphere = current_user.role_level.replace('admin_', '')
+        agente_level = f'agente_{sphere}'
         users = conn.execute(
-            'SELECT * FROM users WHERE role_level = ? OR id = ? ORDER BY id ASC', 
-            (current_user.role_level, current_user.id)
+            'SELECT * FROM users WHERE role_level = ? OR role_level = ? OR id = ? ORDER BY id ASC', 
+            (current_user.role_level, agente_level, current_user.id)
         ).fetchall()
     conn.close()
     
@@ -1713,14 +1715,21 @@ def admin_create_user():
     cpf = request.form.get('cpf', '').strip()
     
     if current_user.role_level == 'admin_geral':
-        role_level = request.form.get('role_level', 'admin_municipal')
+        selected_level = request.form.get('role_level', 'agente_municipal')
+        if 'admin' in selected_level or selected_level in ['admin_geral', 'org']:
+            role = 'admin' if selected_level != 'org' else 'org'
+            role_level = selected_level
+        else:
+            role = 'user'
+            role_level = selected_level
     else:
-        role_level = current_user.role_level
+        # Funcionários cadastrados por gestores recebem role = 'user' (sem permissão de cadastrar outros usuários)
+        sphere = current_user.role_level.replace('admin_', '')
+        role_level = f'agente_{sphere}'
+        role = 'user'
 
-    role = 'admin' if 'admin' in role_level else ('org' if role_level == 'org' else 'user')
-
-    if not username or not password or not nome_completo or not cpf:
-        flash('E-mail institucional (Login de acesso), Senha inicial, Nome completo e CPF são obrigatórios.', 'warning')
+    if not username or not password or not nome_completo or not cpf or not matricula:
+        flash('E-mail institucional (Login), Senha inicial, Nome completo, CPF e Matrícula são obrigatórios.', 'warning')
         return redirect(url_for('admin'))
 
     conn = None

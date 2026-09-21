@@ -47,7 +47,7 @@
                                 </a>
                             </li>
                         {% endif %}
-                        {% if current_user.role in ['admin', 'org'] or 'admin' in current_user.role_level %}
+                        {% if current_user.role in ['admin', 'org'] and ('admin' in current_user.role_level or current_user.role_level in ['admin_geral', 'org']) %}
                             <li class="nav-item">
                                 <a class="nav-link px-3 py-2 rounded-2 {% if request.endpoint == 'admin' %}active bg-primary text-white{% endif %}" href="{{ url_for('admin') }}">
                                     <i class="bi bi-people me-1"></i> Usuários Defesa Civil
@@ -61,9 +61,13 @@
                     {% if current_user.is_authenticated %}
                         {% set level_label = {
                             'admin_geral': 'Administrador Geral',
-                            'admin_nacional': 'Defesa Civil Nacional',
-                            'admin_estadual': 'Defesa Civil Estadual',
-                            'admin_municipal': 'Defesa Civil Municipal',
+                            'admin_nacional': 'Gestor Defesa Civil Nacional',
+                            'admin_estadual': 'Gestor Defesa Civil Estadual',
+                            'admin_municipal': 'Gestor Defesa Civil Municipal',
+                            'agente_nacional': 'Agente Defesa Civil Nacional',
+                            'agente_estadual': 'Agente Defesa Civil Estadual',
+                            'agente_municipal': 'Agente Defesa Civil Municipal',
+                            'agente_org': 'Agente Organização Parceira',
                             'org': 'Organização Parceira',
                             'user': 'Usuário Comum'
                         }.get(current_user.role_level, current_user.role_level) %}

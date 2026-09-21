@@ -43,9 +43,13 @@
                             {% set u_dict = dict(u) %}
                             {% set level_label = {
                                 'admin_geral': 'Administrador Geral',
-                                'admin_nacional': 'Defesa Civil Nacional',
-                                'admin_estadual': 'Defesa Civil Estadual',
-                                'admin_municipal': 'Defesa Civil Municipal',
+                                'admin_nacional': 'Gestor Defesa Civil Nacional',
+                                'admin_estadual': 'Gestor Defesa Civil Estadual',
+                                'admin_municipal': 'Gestor Defesa Civil Municipal',
+                                'agente_nacional': 'Agente Defesa Civil Nacional',
+                                'agente_estadual': 'Agente Defesa Civil Estadual',
+                                'agente_municipal': 'Agente Defesa Civil Municipal',
+                                'agente_org': 'Agente Organização Parceira',
                                 'org': 'Organização Parceira',
                                 'user': 'Usuário Comum'
                             }.get(u_dict.get('role_level'), u_dict.get('role_level') or u_dict.get('role')) %}
@@ -125,8 +129,8 @@
                             <input type="text" name="cpf" class="form-control form-control-sm rounded-3" placeholder="000.000.000-00" required>
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label fw-bold small">Matrícula Oficial / Registro</label>
-                            <input type="text" name="matricula" class="form-control form-control-sm rounded-3" placeholder="Ex: DCN-2026-088">
+                            <label class="form-label fw-bold small">Matrícula Oficial / Registro <span class="text-danger">*</span></label>
+                            <input type="text" name="matricula" class="form-control form-control-sm rounded-3" placeholder="Ex: DCN-2026-088" required>
                         </div>
 
                         <div class="col-md-12">
