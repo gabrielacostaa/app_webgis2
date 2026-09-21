@@ -638,7 +638,7 @@ def upload_shapefile_bulk():
                     )
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (
-                    current_user.id, str(title), str(desc), 'point', float(lat), float(lng), '', 'aprovado',
+                    current_user.id, str(title), str(desc), 'point', float(lat), float(lng), '', 'pendente',
                     'Curadoria', str(tipologia), 'Angra dos Reis', 'RJ',
                     current_user.nome_completo or current_user.username,
                     current_user.cpf or 'N/A',
@@ -650,7 +650,7 @@ def upload_shapefile_bulk():
             conn.commit()
             conn.close()
 
-            flash(f'Sucesso! {count} pontos de ocorrência importados do Shapefile (.zip) e adicionados diretamente à Curadoria.', 'success')
+            flash(f'Sucesso! {count} pontos de ocorrência importados do Shapefile (.zip) e adicionados à fila da Curadoria (Aguardando Aprovação).', 'success')
 
     except Exception as e:
         print(f"Erro no processamento do Shapefile: {e}")
@@ -770,7 +770,7 @@ def upload_bulk_csv():
                         user_id, title, description, submission_type, lat, lng, filename, status,
                         origem, tipologia, municipio, uf, bairro, data_evento,
                         responsavel_nome, responsavel_cpf, responsavel_matricula, responsavel_nivel
-                    ) VALUES (?, ?, ?, 'point', ?, ?, '', 'aprovado', 'Curadoria', ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, 'point', ?, ?, '', 'pendente', 'Curadoria', ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (
                     current_user.id, str(title), str(description), float(lat), float(lng),
                     str(tipologia), str(municipio), str(uf), str(bairro), str(data_evento),
@@ -789,7 +789,7 @@ def upload_bulk_csv():
             os.remove(temp_path)
 
         if inserted_count > 0:
-            flash(f'Sucesso! {inserted_count} pontos de ocorrência da tabela CSV foram importados e integrados à Curadoria.', 'success')
+            flash(f'Sucesso! {inserted_count} pontos de ocorrência da tabela CSV foram importados e enviados para a fila da Curadoria (Aguardando Aprovação).', 'success')
         else:
             flash('Nenhum ponto válido com coordenadas numéricas foi encontrado no arquivo CSV.', 'warning')
 
@@ -1099,6 +1099,56 @@ def curadoria_action(sub_id):
         flash('Submissão rejeitada.', 'warning')
         
     conn.close()
+    return redirect(url_for('curadoria'))
+
+@app.route('/curadoria/approve_all', methods=['POST'])
+@login_required
+def curadoria_approve_all():
+    if current_user.role not in ['admin', 'org']:
+        flash('Acesso negado. Apenas curadores podem realizar esta ação.', 'danger')
+        return redirect(url_for('curadoria'))
+
+    conn = get_db_connection()
+
+    # Adiciona camadas pendentes a tabela de layers
+    pending_layers = conn.execute("SELECT * FROM submissions WHERE status = 'pendente' AND submission_type = 'layer'").fetchall()
+    for layer_sub in pending_layers:
+        conn.execute('INSERT INTO layers (name, filename, category, is_active) VALUES (?, ?, ?, 1)',
+                     (layer_sub['title'], layer_sub['filename'], 'Contribuição de Usuários'))
+
+    conn.execute('''
+        UPDATE submissions 
+        SET status = 'aprovado', origem = 'Curadoria',
+            responsavel_nome = COALESCE(responsavel_nome, ?),
+            responsavel_cpf = COALESCE(responsavel_cpf, ?),
+            responsavel_matricula = COALESCE(responsavel_matricula, ?),
+            responsavel_nivel = COALESCE(responsavel_nivel, ?)
+        WHERE status = 'pendente'
+    ''', (
+        current_user.nome_completo or current_user.username,
+        current_user.cpf or 'N/A',
+        current_user.matricula or 'N/A',
+        current_user.role_level or current_user.role
+    ))
+    conn.commit()
+    conn.close()
+
+    flash('Todos os pontos e submissões pendentes foram aprovados com sucesso!', 'success')
+    return redirect(url_for('curadoria'))
+
+@app.route('/curadoria/delete_all', methods=['POST'])
+@login_required
+def curadoria_delete_all():
+    if current_user.role not in ['admin', 'org']:
+        flash('Acesso negado. Apenas curadores podem realizar esta ação.', 'danger')
+        return redirect(url_for('curadoria'))
+
+    conn = get_db_connection()
+    conn.execute("DELETE FROM submissions WHERE submission_type = 'point'")
+    conn.commit()
+    conn.close()
+
+    flash('Todos os pontos de ocorrência da Curadoria foram excluídos com sucesso.', 'warning')
     return redirect(url_for('curadoria'))
 
 @app.route('/delete_occurrence/<int:sub_id>', methods=['POST'])
