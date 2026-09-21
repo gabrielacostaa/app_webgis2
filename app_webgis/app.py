@@ -11,6 +11,7 @@ import zipfile
 import geopandas as gpd
 from shapely.geometry import Point
 from pdf_generator import generate_occurrence_pdf
+import blockchain_engine
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'geoportal_secret_key'
@@ -273,6 +274,27 @@ def upgrade_db():
     except Exception as e:
         conn.rollback()
         print("Aviso na criacao da tabela layers:", e)
+
+    try:
+        conn.execute(f'''
+            CREATE TABLE IF NOT EXISTS blockchain_ledger (
+                id {pk_type},
+                submission_id INTEGER UNIQUE,
+                block_index INTEGER,
+                timestamp TEXT,
+                data_hash TEXT,
+                previous_hash TEXT,
+                block_hash TEXT,
+                curator_nome TEXT,
+                curator_cpf TEXT,
+                curator_matricula TEXT,
+                curator_nivel TEXT
+            )
+        ''')
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        print("Aviso na criacao da tabela blockchain_ledger:", e)
 
     # Seed / Upsert default users
     default_users = [
@@ -1260,13 +1282,33 @@ def get_occurrences():
 def occurrence_pdf(point_id):
     conn = get_db_connection()
     point = conn.execute('SELECT * FROM submissions WHERE id = ?', (point_id,)).fetchone()
-    conn.close()
     
     if not point:
+        conn.close()
         flash('Ocorrência não encontrada.', 'danger')
         return redirect(url_for('index'))
         
     p_dict = dict(point)
+    
+    # Buscar ou gerar registro na Blockchain Ledger para o laudo
+    block = conn.execute('SELECT * FROM blockchain_ledger WHERE submission_id = ?', (point_id,)).fetchone()
+    if not block:
+        try:
+            b_info = blockchain_engine.notarize_record(conn, point_id, current_user)
+            if b_info:
+                block = conn.execute('SELECT * FROM blockchain_ledger WHERE submission_id = ?', (point_id,)).fetchone()
+        except Exception as e:
+            print("Aviso ao notarizar no PDF:", e)
+            
+    if block:
+        b_dict = dict(block)
+        p_dict['block_hash'] = b_dict.get('block_hash')
+        p_dict['data_hash'] = b_dict.get('data_hash')
+        p_dict['previous_hash'] = b_dict.get('previous_hash')
+        p_dict['block_index'] = b_dict.get('block_index')
+        p_dict['blockchain_timestamp'] = b_dict.get('timestamp')
+        
+    conn.close()
     
     with tempfile.TemporaryDirectory() as tmpdir:
         pdf_path = os.path.join(tmpdir, f"relatorio_ocorrencia_{point_id}.pdf")
@@ -1278,6 +1320,48 @@ def occurrence_pdf(point_id):
             as_attachment=False,
             mimetype='application/pdf'
         )
+
+# --- Rotas de Auditoria Blockchain & Cadeia de Custódia ---
+
+@app.route('/api/occurrence/<int:sub_id>/blockchain')
+def api_occurrence_blockchain(sub_id):
+    conn = get_db_connection()
+    block = conn.execute('SELECT * FROM blockchain_ledger WHERE submission_id = ?', (sub_id,)).fetchone()
+    if not block:
+        # Se aprovada mas ainda sem bloco, notariza automaticamente
+        sub = conn.execute('SELECT status FROM submissions WHERE id = ?', (sub_id,)).fetchone()
+        if sub and (sub['status'] or '').lower() == 'aprovado':
+            try:
+                blockchain_engine.notarize_record(conn, sub_id)
+                block = conn.execute('SELECT * FROM blockchain_ledger WHERE submission_id = ?', (sub_id,)).fetchone()
+            except Exception:
+                pass
+    conn.close()
+    
+    if not block:
+        return jsonify({'notarized': False, 'message': 'Ocorrência ainda não notarizada em blockchain.'}), 404
+        
+    return jsonify({
+        'notarized': True,
+        'certificate': dict(block)
+    })
+
+@app.route('/api/blockchain/verify/<int:sub_id>')
+def api_blockchain_verify(sub_id):
+    conn = get_db_connection()
+    result = blockchain_engine.verify_record_integrity(conn, sub_id)
+    conn.close()
+    return jsonify(result)
+
+@app.route('/api/blockchain/ledger')
+def api_blockchain_ledger():
+    conn = get_db_connection()
+    blocks = conn.execute('SELECT * FROM blockchain_ledger ORDER BY block_index ASC').fetchall()
+    conn.close()
+    return jsonify({
+        'total_blocks': len(blocks),
+        'chain': [dict(b) for b in blocks]
+    })
 
 # --- Curadoria ---
 
@@ -1505,8 +1589,16 @@ def curadoria_action(sub_id):
             conn.execute('INSERT INTO layers (name, filename, category, is_active) VALUES (?, ?, ?, 1)',
                          (submission['title'], submission['filename'], 'Contribuição de Usuários'))
                          
-        conn.commit()
-        flash('Submissão aprovada e adicionada à camada com Origem = Curadoria!', 'success')
+        # Notarização Criptográfica em Blockchain (Cadeia de Custódia)
+        try:
+            b_res = blockchain_engine.notarize_record(conn, sub_id, current_user)
+            if b_res:
+                flash(f'Submissão #{sub_id} aprovada e NOTARIZADA no Blockchain Ledger (Bloco #{b_res["block_index"]})!', 'success')
+            else:
+                flash('Submissão aprovada na Curadoria!', 'success')
+        except Exception as b_err:
+            print("Aviso ao notarizar no blockchain:", b_err)
+            flash('Submissão aprovada na Curadoria!', 'success')
         
     elif action == 'reject':
         conn.execute('UPDATE submissions SET status = ?, feedback = ? WHERE id = ?', ('rejeitado', feedback, sub_id))
