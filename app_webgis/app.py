@@ -1697,16 +1697,16 @@ def admin_create_user():
         return redirect(url_for('admin'))
 
     pwd_hash = generate_password_hash(password)
-    cursor = conn.cursor()
-    cursor.execute('''
+    res = conn.execute('''
         INSERT INTO users (username, password_hash, role, role_level, email, nome_completo, telefone, matricula, cpf)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     ''', (username, pwd_hash, role, role_level, email, nome_completo, telefone, matricula, cpf))
-    new_id = cursor.lastrowid
     conn.commit()
+    new_id = getattr(res, 'lastrowid', None)
     conn.close()
 
-    flash(f'Novo agente "{nome_completo}" (ID #{new_id}) cadastrado com sucesso com o login "{username}"!', 'success')
+    id_str = f" (ID #{new_id})" if new_id else ""
+    flash(f'Novo agente "{nome_completo}"{id_str} cadastrado com sucesso com o login "{username}"!', 'success')
     return redirect(url_for('admin'))
 
 @app.route('/admin/delete_user/<int:user_id>', methods=['POST'])
