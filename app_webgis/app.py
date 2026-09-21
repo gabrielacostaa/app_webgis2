@@ -213,7 +213,8 @@ def upgrade_db():
         ('nome_completo', 'TEXT'),
         ('telefone', 'TEXT'),
         ('matricula', 'TEXT'),
-        ('cpf', 'TEXT')
+        ('cpf', 'TEXT'),
+        ('funcao', "TEXT DEFAULT 'agente'")
     ]
     for col_name, col_def in user_columns:
         try:
@@ -275,26 +276,39 @@ def upgrade_db():
 
     # Seed / Upsert default users
     default_users = [
-        ('admin', generate_password_hash('Admin@123'), 'admin', 'admin_geral', 'admin.geral@geoportal.gov.br', 'Administrador Geral MOVMASSA', '(24) 99999-0000', 'ADM-GERAL-001', '000.000.000-00'),
-        ('defesa_nacional', generate_password_hash('Defesa@123'), 'admin', 'admin_nacional', 'nacional@defesacivil.gov.br', 'Agente Defesa Civil Nacional', '(61) 3333-1000', 'GOV-DCN-2026', '111.111.111-11'),
-        ('defesa_estadual', generate_password_hash('Defesa@123'), 'admin', 'admin_estadual', 'estadual@defesacivil.rj.gov.br', 'Agente Defesa Civil Estadual RJ', '(21) 2222-2000', 'EST-DCE-2026', '222.222.222-22'),
-        ('defesa_municipal', generate_password_hash('Defesa@123'), 'admin', 'admin_municipal', 'defesacivil@angra.rj.gov.br', 'Agente Defesa Civil Municipal Angra', '(24) 3365-3000', 'MUN-DCM-2026', '333.333.333-33'),
-        ('org', generate_password_hash('Org@123'), 'org', 'org', 'contato@orgamb.org.br', 'Organização Técnica Ambientalista', '(24) 98888-4000', 'ORG-ANG-2026', '444.444.444-44'),
-        ('user', generate_password_hash('User@123'), 'user', 'user', 'usuario@email.com', 'Usuário Comum de Campo', '(24) 97777-5000', 'N/A', '555.555.555-55')
+        ('admin', generate_password_hash('Admin@123'), 'admin', 'admin_geral', 'admin.geral@geoportal.gov.br', 'Administrador Geral MOVMASSA', '(24) 99999-0000', 'ADM-GERAL-001', '000.000.000-00', 'gestor_agente'),
+        ('defesa_nacional', generate_password_hash('Defesa@123'), 'admin', 'admin_nacional', 'nacional@defesacivil.gov.br', 'Agente Defesa Civil Nacional', '(61) 3333-1000', 'GOV-DCN-2026', '111.111.111-11', 'gestor_agente'),
+        ('defesa_estadual', generate_password_hash('Defesa@123'), 'admin', 'admin_estadual', 'estadual@defesacivil.rj.gov.br', 'Agente Defesa Civil Estadual RJ', '(21) 2222-2000', 'EST-DCE-2026', '222.222.222-22', 'gestor_agente'),
+        ('defesa_municipal', generate_password_hash('Defesa@123'), 'admin', 'admin_municipal', 'defesacivil@angra.rj.gov.br', 'Agente Defesa Civil Municipal Angra', '(24) 3365-3000', 'MUN-DCM-2026', '333.333.333-33', 'gestor_agente'),
+        ('org', generate_password_hash('Org@123'), 'org', 'org', 'contato@orgamb.org.br', 'Organização Técnica Ambientalista', '(24) 98888-4000', 'ORG-ANG-2026', '444.444.444-44', 'gestor_agente'),
+        ('user', generate_password_hash('User@123'), 'user', 'user', 'usuario@email.com', 'Usuário Comum de Campo', '(24) 97777-5000', 'N/A', '555.555.555-55', 'agente')
     ]
     for u in default_users:
         try:
             uname = u[0]
             existing = conn.execute('SELECT id FROM users WHERE username = ?', (uname,)).fetchone()
             if not existing:
-                conn.execute('''
-                    INSERT INTO users (username, password_hash, role, role_level, email, nome_completo, telefone, matricula, cpf)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ''', u)
+                try:
+                    conn.execute('''
+                        INSERT INTO users (username, password, password_hash, role, role_level, email, nome_completo, telefone, matricula, cpf, funcao)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (u[0], u[1], u[1], u[2], u[3], u[4], u[5], u[6], u[7], u[8], u[9]))
+                except Exception:
+                    conn.rollback()
+                    conn.execute('''
+                        INSERT INTO users (username, password_hash, role, role_level, email, nome_completo, telefone, matricula, cpf, funcao)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (u[0], u[1], u[2], u[3], u[4], u[5], u[6], u[7], u[8], u[9]))
             else:
-                conn.execute('''
-                    UPDATE users SET password_hash = ?, role = ?, role_level = ? WHERE username = ?
-                ''', (u[1], u[2], u[3], uname))
+                try:
+                    conn.execute('''
+                        UPDATE users SET password = ?, password_hash = ?, role = ?, role_level = ?, funcao = ? WHERE username = ?
+                    ''', (u[1], u[1], u[2], u[3], u[9], uname))
+                except Exception:
+                    conn.rollback()
+                    conn.execute('''
+                        UPDATE users SET password_hash = ?, role = ?, role_level = ?, funcao = ? WHERE username = ?
+                    ''', (u[1], u[2], u[3], u[9], uname))
             conn.commit()
         except Exception as e:
             conn.rollback()
@@ -1714,19 +1728,25 @@ def admin_create_user():
     matricula = request.form.get('matricula', '').strip()
     cpf = request.form.get('cpf', '').strip()
     
+    funcao_requested = request.form.get('funcao', '').strip()
+
     if current_user.role_level == 'admin_geral':
-        selected_level = request.form.get('role_level', 'agente_municipal')
-        if 'admin' in selected_level or selected_level in ['admin_geral', 'org']:
+        selected_level = request.form.get('role_level', 'admin_municipal')
+        if funcao_requested == 'gestor' or 'admin' in selected_level or selected_level in ['admin_geral', 'org']:
             role = 'admin' if selected_level != 'org' else 'org'
             role_level = selected_level
+            funcao = 'gestor' if funcao_requested == 'gestor' else 'gestor_agente'
         else:
             role = 'user'
-            role_level = selected_level
+            sphere = selected_level.replace('admin_', '').replace('agente_', '')
+            role_level = f'agente_{sphere}' if sphere in ['nacional', 'estadual', 'municipal', 'org'] else 'user'
+            funcao = 'agente'
     else:
-        # Funcionários cadastrados por gestores recebem role = 'user' (sem permissão de cadastrar outros usuários)
+        # Funcionários cadastrados por gestores recebem role = 'user' (funcao = 'agente')
         sphere = current_user.role_level.replace('admin_', '')
         role_level = f'agente_{sphere}'
         role = 'user'
+        funcao = 'agente'
 
     if not username or not password or not nome_completo or not cpf or not matricula:
         flash('E-mail institucional (Login), Senha inicial, Nome completo, CPF e Matrícula são obrigatórios.', 'warning')
@@ -1749,10 +1769,13 @@ def admin_create_user():
                         'admin_nacional': 'Defesa Civil Nacional',
                         'admin_estadual': 'Defesa Civil Estadual',
                         'admin_municipal': 'Defesa Civil Municipal',
+                        'agente_nacional': 'Defesa Civil Nacional',
+                        'agente_estadual': 'Defesa Civil Estadual',
+                        'agente_municipal': 'Defesa Civil Municipal',
                         'org': 'Organização Parceira'
                     }.get(u_dict_item.get('role_level'), u_dict_item.get('role_level'))
                     conn.close()
-                    flash(f'Bloqueio por CPF: O CPF "{cpf}" já pertence ao agente "{u_dict_item.get("nome_completo") or u_dict_item.get("username")}" cadastrado na {sphere_name} (Login: {u_dict_item.get("username")}). Não é permitido cadastrar o mesmo CPF em mais de uma esfera.', 'danger')
+                    flash(f'Bloqueio de Duplicidade: A pessoa com CPF "{cpf}" ({u_dict_item.get("nome_completo") or u_dict_item.get("username")}) já está cadastrada na {sphere_name} (Login: {u_dict_item.get("username")}). Jamais podem existir a mesma pessoa cadastrada em diferentes esferas da Defesa Civil.', 'danger')
                     return redirect(url_for('admin'))
 
         # 2. Bloqueio por E-mail / Username único
@@ -1769,15 +1792,15 @@ def admin_create_user():
         pwd_hash = generate_password_hash(password)
         try:
             res = conn.execute('''
-                INSERT INTO users (username, password, password_hash, role, role_level, email, nome_completo, telefone, matricula, cpf)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (username, pwd_hash, pwd_hash, role, role_level, email, nome_completo, telefone, matricula, cpf))
+                INSERT INTO users (username, password, password_hash, role, role_level, email, nome_completo, telefone, matricula, cpf, funcao)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (username, pwd_hash, pwd_hash, role, role_level, email, nome_completo, telefone, matricula, cpf, funcao))
         except Exception:
             conn.rollback()
             res = conn.execute('''
-                INSERT INTO users (username, password_hash, role, role_level, email, nome_completo, telefone, matricula, cpf)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (username, pwd_hash, role, role_level, email, nome_completo, telefone, matricula, cpf))
+                INSERT INTO users (username, password_hash, role, role_level, email, nome_completo, telefone, matricula, cpf, funcao)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (username, pwd_hash, role, role_level, email, nome_completo, telefone, matricula, cpf, funcao))
         conn.commit()
         new_id = getattr(res, 'lastrowid', None)
         conn.close()

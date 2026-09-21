@@ -34,7 +34,8 @@
                                 <th>Login / Usuário</th>
                                 <th>Nome Completo & Contato</th>
                                 <th>CPF / Matrícula</th>
-                                <th>Nível de Atuação / Papel</th>
+                                <th>Esfera / Nível</th>
+                                <th>Função no Sistema</th>
                                 <th class="pe-4 text-end">Ações</th>
                             </tr>
                         </thead>
@@ -43,13 +44,13 @@
                             {% set u_dict = dict(u) %}
                             {% set level_label = {
                                 'admin_geral': 'Administrador Geral',
-                                'admin_nacional': 'Gestor Defesa Civil Nacional',
-                                'admin_estadual': 'Gestor Defesa Civil Estadual',
-                                'admin_municipal': 'Gestor Defesa Civil Municipal',
-                                'agente_nacional': 'Agente Defesa Civil Nacional',
-                                'agente_estadual': 'Agente Defesa Civil Estadual',
-                                'agente_municipal': 'Agente Defesa Civil Municipal',
-                                'agente_org': 'Agente Organização Parceira',
+                                'admin_nacional': 'Defesa Civil Nacional',
+                                'admin_estadual': 'Defesa Civil Estadual',
+                                'admin_municipal': 'Defesa Civil Municipal',
+                                'agente_nacional': 'Defesa Civil Nacional',
+                                'agente_estadual': 'Defesa Civil Estadual',
+                                'agente_municipal': 'Defesa Civil Municipal',
+                                'agente_org': 'Organização Parceira',
                                 'org': 'Organização Parceira',
                                 'user': 'Usuário Comum'
                             }.get(u_dict.get('role_level'), u_dict.get('role_level') or u_dict.get('role')) %}
@@ -68,9 +69,25 @@
                                     <div class="small text-muted"><strong>Matrícula:</strong> {{ u_dict.get('matricula') or 'Não informada' }}</div>
                                 </td>
                                 <td>
-                                    <span class="badge {% if u_dict.get('role_level') == 'admin_geral' %}bg-danger{% elif 'admin' in u_dict.get('role_level', '') %}bg-primary{% elif u_dict.get('role') == 'org' %}bg-success{% else %}bg-secondary{% endif %} px-2 py-1">
-                                        <i class="bi bi-shield-check me-1"></i> {{ level_label }}
+                                    <span class="badge {% if u_dict.get('role_level') == 'admin_geral' %}bg-danger{% elif 'admin' in u_dict.get('role_level', '') or u_dict.get('role_level') == 'org' %}bg-primary{% else %}bg-secondary{% endif %} px-2 py-1">
+                                        <i class="bi bi-geo-alt-fill me-1"></i> {{ level_label }}
                                     </span>
+                                </td>
+                                <td>
+                                    {% set func = u_dict.get('funcao') or ('gestor_agente' if u_dict.get('role') in ['admin', 'org'] else 'agente') %}
+                                    {% if func == 'gestor_agente' %}
+                                        <span class="badge bg-warning text-dark px-2 py-1 rounded-pill fw-bold">
+                                            <i class="bi bi-shield-lock-fill me-1"></i> Gestor & Agente
+                                        </span>
+                                    {% elif func == 'gestor' or u_dict.get('role') in ['admin', 'org'] %}
+                                        <span class="badge bg-dark text-white px-2 py-1 rounded-pill fw-bold">
+                                            <i class="bi bi-person-gear me-1"></i> Gestor
+                                        </span>
+                                    {% else %}
+                                        <span class="badge bg-info text-dark px-2 py-1 rounded-pill fw-semibold">
+                                            <i class="bi bi-person-badge-fill me-1"></i> Agente de Campo
+                                        </span>
+                                    {% endif %}
                                 </td>
                                 <td class="pe-4 text-end">
                                     {% if u_dict.id != current_user.id %}
@@ -138,8 +155,8 @@
                             <input type="text" name="telefone" class="form-control form-control-sm rounded-3" placeholder="(00) 90000-0000">
                         </div>
 
-                        <div class="col-md-12">
-                            <label class="form-label fw-bold small">Nível de Atuação / Esfera da Defesa Civil</label>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold small">Esfera da Defesa Civil</label>
                             {% if current_user.role_level == 'admin_geral' %}
                                 <select name="role_level" class="form-select form-select-sm rounded-3 fw-bold text-primary">
                                     <option value="admin_nacional">Defesa Civil Nacional (Governo Federal)</option>
@@ -157,6 +174,19 @@
                                 }.get(current_user.role_level, current_user.role_level) %}
                                 <input type="text" class="form-control form-control-sm rounded-3 bg-light fw-bold text-primary" value="{{ cur_level_label }}" readonly disabled>
                                 <input type="hidden" name="role_level" value="{{ current_user.role_level }}">
+                            {% endif %}
+                        </div>
+
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold small">Função no Sistema</label>
+                            {% if current_user.role_level == 'admin_geral' %}
+                                <select name="funcao" class="form-select form-select-sm rounded-3 fw-bold text-dark">
+                                    <option value="agente" selected>Agente de Campo (Sem permissão de gerenciar usuários)</option>
+                                    <option value="gestor">Gestor da Esfera (Permissão de Gestão)</option>
+                                </select>
+                            {% else %}
+                                <input type="text" class="form-control form-control-sm rounded-3 bg-light text-muted" value="Agente de Campo (Sem permissão de gerenciar usuários)" readonly disabled>
+                                <input type="hidden" name="funcao" value="agente">
                             {% endif %}
                         </div>
                     </div>
