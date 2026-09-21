@@ -197,8 +197,16 @@ def upgrade_db():
         conn.rollback()
         print("Aviso na criacao da tabela users:", e)
 
+    # Drop NOT NULL constraint on legacy password column if present
+    try:
+        conn.execute('ALTER TABLE users ALTER COLUMN password DROP NOT NULL;')
+        conn.commit()
+    except Exception:
+        conn.rollback()
+
     # Column migrations for legacy databases
     user_columns = [
+        ('password', 'TEXT'),
         ('password_hash', 'TEXT'),
         ('role_level', "TEXT DEFAULT 'user'"),
         ('email', 'TEXT'),
@@ -1728,10 +1736,17 @@ def admin_create_user():
             return redirect(url_for('admin'))
 
         pwd_hash = generate_password_hash(password)
-        res = conn.execute('''
-            INSERT INTO users (username, password_hash, role, role_level, email, nome_completo, telefone, matricula, cpf)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (username, pwd_hash, role, role_level, email, nome_completo, telefone, matricula, cpf))
+        try:
+            res = conn.execute('''
+                INSERT INTO users (username, password, password_hash, role, role_level, email, nome_completo, telefone, matricula, cpf)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (username, pwd_hash, pwd_hash, role, role_level, email, nome_completo, telefone, matricula, cpf))
+        except Exception:
+            conn.rollback()
+            res = conn.execute('''
+                INSERT INTO users (username, password_hash, role, role_level, email, nome_completo, telefone, matricula, cpf)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (username, pwd_hash, role, role_level, email, nome_completo, telefone, matricula, cpf))
         conn.commit()
         new_id = getattr(res, 'lastrowid', None)
         conn.close()
