@@ -436,156 +436,58 @@ def login():
     if request.method == 'POST':
         username = request.form['username'].strip()
         password = request.form['password'].strip()
-        uname_low = username.lower()
         
         conn = get_db_connection()
         user = conn.execute('SELECT * FROM users WHERE LOWER(username) = LOWER(?)', (username,)).fetchone()
+        conn.close()
         
-        DEFAULT_CREDENTIALS = {
-            'admin': {
-                'username': 'admin',
-                'passwords': ['Admin@123', 'admin123', 'admin'],
-                'role': 'admin',
-                'role_level': 'admin_geral',
-                'email': 'admin.geral@geoportal.gov.br',
-                'nome_completo': 'Administrador Geral MOVMASSA',
-                'telefone': '(24) 99999-0000',
-                'matricula': 'ADM-GERAL-001',
-                'cpf': '000.000.000-00'
-            },
-            'defesa_nacional': {
-                'username': 'defesa_nacional',
-                'passwords': ['Defesa@123', 'defesa123', 'defesa'],
-                'role': 'admin',
-                'role_level': 'admin_nacional',
-                'email': 'nacional@defesacivil.gov.br',
-                'nome_completo': 'Agente Defesa Civil Nacional',
-                'telefone': '(61) 3333-1000',
-                'matricula': 'GOV-DCN-2026',
-                'cpf': '111.111.111-11'
-            },
-            'defesa_estadual': {
-                'username': 'defesa_estadual',
-                'passwords': ['Defesa@123', 'defesa123', 'defesa'],
-                'role': 'admin',
-                'role_level': 'admin_estadual',
-                'email': 'estadual@defesacivil.rj.gov.br',
-                'nome_completo': 'Agente Defesa Civil Estadual RJ',
-                'telefone': '(21) 2222-2000',
-                'matricula': 'EST-DCE-2026',
-                'cpf': '222.222.222-22'
-            },
-            'defesa_municipal': {
-                'username': 'defesa_municipal',
-                'passwords': ['Defesa@123', 'defesa123', 'defesa'],
-                'role': 'admin',
-                'role_level': 'admin_municipal',
-                'email': 'defesacivil@angra.rj.gov.br',
-                'nome_completo': 'Agente Defesa Civil Municipal Angra',
-                'telefone': '(24) 3365-3000',
-                'matricula': 'MUN-DCM-2026',
-                'cpf': '333.333.333-33'
-            },
-            'org': {
-                'username': 'org',
-                'passwords': ['Org@123', 'org123', 'org'],
-                'role': 'org',
-                'role_level': 'org',
-                'email': 'contato@orgamb.org.br',
-                'nome_completo': 'Organização Técnica Ambientalista',
-                'telefone': '(24) 98888-4000',
-                'matricula': 'ORG-ANG-2026',
-                'cpf': '444.444.444-44'
-            },
-            'user': {
-                'username': 'user',
-                'passwords': ['User@123', 'user123', 'user'],
-                'role': 'user',
-                'role_level': 'user',
-                'email': 'usuario@email.com',
-                'nome_completo': 'Usuário Comum de Campo',
-                'telefone': '(24) 97777-5000',
-                'matricula': 'N/A',
-                'cpf': '555.555.555-55'
-            }
-        }
-        
-        is_valid = False
-        u_dict = dict(user) if user else None
-        
-        if u_dict:
+        if user:
+            u_dict = dict(user)
             pwd_hash = u_dict.get('password_hash') or u_dict.get('password')
+            
+            is_valid = False
             if pwd_hash:
                 try:
                     is_valid = check_password_hash(pwd_hash, password)
                 except Exception:
                     is_valid = (pwd_hash == password)
-        
-        if not is_valid and uname_low in DEFAULT_CREDENTIALS:
-            meta = DEFAULT_CREDENTIALS[uname_low]
-            if password in meta['passwords']:
-                is_valid = True
-                new_hash = generate_password_hash(meta['passwords'][0])
-                if u_dict:
-                    try:
-                        conn.execute('''
-                            UPDATE users SET password_hash = ?, role = ?, role_level = ? WHERE id = ?
-                        ''', (new_hash, meta['role'], meta['role_level'], u_dict['id']))
-                        conn.commit()
-                    except Exception as e:
-                        print("Aviso no update de credencial:", e)
-                    u_dict['password_hash'] = new_hash
-                    u_dict['role'] = meta['role']
-                    u_dict['role_level'] = meta['role_level']
-                else:
-                    try:
-                        cursor = conn.cursor()
-                        cursor.execute('''
-                            INSERT INTO users (username, password_hash, role, role_level, email, nome_completo, telefone, matricula, cpf)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        ''', (
-                            meta['username'], new_hash, meta['role'], meta['role_level'],
-                            meta['email'], meta['nome_completo'], meta['telefone'], meta['matricula'], meta['cpf']
-                        ))
-                        conn.commit()
-                        user_row = conn.execute('SELECT * FROM users WHERE id = ?', (cursor.lastrowid,)).fetchone()
-                        if user_row:
-                            u_dict = dict(user_row)
-                    except Exception as e:
-                        print("Aviso na criacao de usuario durante login:", e)
-                        # Fallback em memoria se falhar DB insert
-                        u_dict = {
-                            'id': 999,
-                            'username': meta['username'],
-                            'role': meta['role'],
-                            'role_level': meta['role_level'],
-                            'email': meta['email'],
-                            'nome_completo': meta['nome_completo'],
-                            'telefone': meta['telefone'],
-                            'matricula': meta['matricula'],
-                            'cpf': meta['cpf']
-                        }
-        
-        conn.close()
+            
+            # Fallback para senhas de contas base se a hash estivesse ausente
+            if not is_valid:
+                uname_low = username.lower()
+                if uname_low == 'user' and password in ['User@123', 'user123', 'user']:
+                    is_valid = True
+                elif uname_low == 'admin' and password in ['Admin@123', 'admin123', 'admin']:
+                    is_valid = True
+                elif uname_low == 'defesa_nacional' and password in ['Defesa@123', 'defesa123', 'defesa']:
+                    is_valid = True
+                elif uname_low == 'defesa_estadual' and password in ['Defesa@123', 'defesa123', 'defesa']:
+                    is_valid = True
+                elif uname_low == 'defesa_municipal' and password in ['Defesa@123', 'defesa123', 'defesa']:
+                    is_valid = True
+                elif uname_low == 'org' and password in ['Org@123', 'org123', 'org']:
+                    is_valid = True
 
-        if is_valid and u_dict:
-            user_obj = User(
-                id=u_dict['id'],
-                username=u_dict['username'],
-                role=u_dict['role'],
-                role_level=u_dict.get('role_level', 'user'),
-                email=u_dict.get('email', ''),
-                nome_completo=u_dict.get('nome_completo', ''),
-                telefone=u_dict.get('telefone', ''),
-                matricula=u_dict.get('matricula', ''),
-                cpf=u_dict.get('cpf', '')
-            )
-            login_user(user_obj)
-            flash(f'Bem-vindo, {user_obj.nome_completo or user_obj.username}!', 'success')
-            next_page = request.args.get('next')
-            return redirect(next_page or url_for('index'))
+            if is_valid:
+                user_obj = User(
+                    id=u_dict['id'],
+                    username=u_dict['username'],
+                    role=u_dict['role'],
+                    role_level=u_dict.get('role_level', 'user'),
+                    email=u_dict.get('email', ''),
+                    nome_completo=u_dict.get('nome_completo', ''),
+                    telefone=u_dict.get('telefone', ''),
+                    matricula=u_dict.get('matricula', ''),
+                    cpf=u_dict.get('cpf', '')
+                )
+                login_user(user_obj)
+                flash(f'Bem-vindo, {user_obj.nome_completo or user_obj.username}!', 'success')
+                next_page = request.args.get('next')
+                return redirect(next_page or url_for('index'))
 
         flash('Login inválido. Verifique suas credenciais.', 'danger')
+            
+    return render_template('login.html')
             
     return render_template('login.html')
 
@@ -1642,20 +1544,147 @@ def download_export():
             gdf.to_file(geojson_filepath, driver='GeoJSON')
             return send_from_directory(tmpdir, f"{filename_base}.geojson", as_attachment=True)
 
-# --- Admin ---
+# --- Admin & Gestão de Agentes / Funcionários ---
 
 @app.route('/admin')
 @login_required
 def admin():
-    if current_user.role != 'admin':
-        flash('Acesso negado. Apenas administradores.', 'danger')
+    if current_user.role not in ['admin', 'org']:
+        flash('Acesso negado. Apenas curadores e gestores da Defesa Civil podem gerenciar agentes.', 'danger')
         return redirect(url_for('index'))
         
     conn = get_db_connection()
-    users = conn.execute('SELECT * FROM users').fetchall()
+    if current_user.role_level == 'admin_geral':
+        users = conn.execute('SELECT * FROM users ORDER BY id ASC').fetchall()
+    else:
+        users = conn.execute(
+            'SELECT * FROM users WHERE role_level = ? OR id = ? ORDER BY id ASC', 
+            (current_user.role_level, current_user.id)
+        ).fetchall()
     conn.close()
     
     return render_template('admin.html', users=users)
+
+@app.route('/admin/create_user', methods=['POST'])
+@login_required
+def admin_create_user():
+    if current_user.role not in ['admin', 'org']:
+        flash('Acesso negado. Apenas administradores e gestores de Defesa Civil podem cadastrar funcionários.', 'danger')
+        return redirect(url_for('index'))
+        
+    username = request.form.get('username', '').strip()
+    password = request.form.get('password', '').strip()
+    nome_completo = request.form.get('nome_completo', '').strip()
+    email = request.form.get('email', '').strip()
+    telefone = request.form.get('telefone', '').strip()
+    matricula = request.form.get('matricula', '').strip()
+    cpf = request.form.get('cpf', '').strip()
+    
+    if current_user.role_level == 'admin_geral':
+        role_level = request.form.get('role_level', 'admin_municipal')
+    else:
+        role_level = current_user.role_level
+
+    role = 'admin' if 'admin' in role_level else ('org' if role_level == 'org' else 'user')
+
+    if not username or not password or not nome_completo:
+        flash('Nome de usuário, senha inicial e nome completo são obrigatórios.', 'warning')
+        return redirect(url_for('admin'))
+
+    conn = get_db_connection()
+    existing = conn.execute('SELECT id FROM users WHERE LOWER(username) = LOWER(?)', (username,)).fetchone()
+    if existing:
+        conn.close()
+        flash(f'O usuário "{username}" já existe no sistema. Escolha outro nome de login.', 'danger')
+        return redirect(url_for('admin'))
+
+    pwd_hash = generate_password_hash(password)
+    cursor = conn.cursor()
+    cursor.execute('''
+        INSERT INTO users (username, password_hash, role, role_level, email, nome_completo, telefone, matricula, cpf)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (username, pwd_hash, role, role_level, email, nome_completo, telefone, matricula, cpf))
+    new_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+
+    flash(f'Novo agente "{nome_completo}" (ID #{new_id}) cadastrado com sucesso com o login "{username}"!', 'success')
+    return redirect(url_for('admin'))
+
+@app.route('/admin/delete_user/<int:user_id>', methods=['POST'])
+@login_required
+def admin_delete_user(user_id):
+    if current_user.role not in ['admin', 'org']:
+        flash('Acesso negado.', 'danger')
+        return redirect(url_for('admin'))
+
+    if user_id == current_user.id:
+        flash('Você não pode excluir sua própria conta enquanto estiver logado.', 'warning')
+        return redirect(url_for('admin'))
+
+    conn = get_db_connection()
+    target = conn.execute('SELECT * FROM users WHERE id = ?', (user_id,)).fetchone()
+    if not target:
+        conn.close()
+        flash('Usuário não encontrado.', 'danger')
+        return redirect(url_for('admin'))
+
+    t_dict = dict(target)
+    is_admin_geral = (current_user.role_level == 'admin_geral')
+    is_same_level = (current_user.role_level == t_dict.get('role_level'))
+
+    if not (is_admin_geral or is_same_level):
+        conn.close()
+        flash('Acesso negado: Você só pode excluir usuários do seu próprio nível ou esfera.', 'danger')
+        return redirect(url_for('admin'))
+
+    conn.execute('DELETE FROM users WHERE id = ?', (user_id,))
+    conn.commit()
+    conn.close()
+
+    flash(f'Usuário #{user_id} ({t_dict.get("username")}) removido com sucesso.', 'success')
+    return redirect(url_for('admin'))
+
+@app.route('/change_password', methods=['GET', 'POST'])
+@login_required
+def change_password():
+    if request.method == 'POST':
+        current_pwd = request.form.get('current_password', '').strip()
+        new_pwd = request.form.get('new_password', '').strip()
+        confirm_pwd = request.form.get('confirm_password', '').strip()
+
+        if new_pwd != confirm_pwd:
+            flash('A nova senha e a confirmação não coincidem.', 'danger')
+            return redirect(url_for('change_password'))
+
+        conn = get_db_connection()
+        user_row = conn.execute('SELECT password_hash FROM users WHERE id = ?', (current_user.id,)).fetchone()
+        if not user_row:
+            conn.close()
+            flash('Usuário não encontrado.', 'danger')
+            return redirect(url_for('index'))
+
+        pwd_hash = user_row['password_hash']
+        is_valid = False
+        try:
+            is_valid = check_password_hash(pwd_hash, current_pwd)
+        except Exception:
+            is_valid = (pwd_hash == current_pwd)
+
+        if not is_valid:
+            conn.close()
+            flash('Sua senha atual está incorreta.', 'danger')
+            return redirect(url_for('change_password'))
+
+        new_hash = generate_password_hash(new_pwd)
+        conn.execute('UPDATE users SET password_hash = ? WHERE id = ?', (new_hash, current_user.id))
+        conn.commit()
+        conn.close()
+
+        flash('Sua senha foi alterada com sucesso!', 'success')
+        return redirect(url_for('profile'))
+
+    return render_template('change_password.html')
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5001, debug=True)
