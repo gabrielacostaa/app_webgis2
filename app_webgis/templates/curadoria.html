@@ -60,7 +60,9 @@
                             {% for sub in submissions %}
                             {% set is_admin_geral = (current_user.role_level == 'admin_geral') %}
                             {% set is_owner = (current_user.id == sub.user_id) %}
-                            {% set can_delete = is_admin_geral or is_owner %}
+                            {% set sub_sphere = sub.responsavel_nivel or sub.u_role_level %}
+                            {% set is_same_sphere = (current_user.role_level == sub_sphere) %}
+                            {% set can_manage = is_admin_geral or is_owner or is_same_sphere %}
 
                             <tr>
                                 <td class="ps-4">
@@ -77,7 +79,7 @@
                                             'admin_municipal': 'Defesa Civil Municipal',
                                             'org': 'Organização',
                                             'user': 'Usuário'
-                                        }.get(sub.responsavel_nivel or sub.u_role_level, sub.responsavel_nivel or sub.u_role_level) %}
+                                        }.get(sub_sphere, sub_sphere) %}
                                         <span class="badge bg-dark-subtle text-dark">{{ level_label }}</span>
                                     </div>
                                     <div class="text-muted" style="font-size: 10px;">
@@ -130,34 +132,34 @@
                                         </a>
                                         {% endif %}
 
-                                        <!-- Botões Aprovar / Rejeitar -->
-                                        {% if sub.status == 'pendente' %}
-                                        <form action="{{ url_for('curadoria_action', sub_id=sub.id) }}" method="POST" class="d-inline">
-                                            <input type="hidden" name="action" value="approve">
-                                            <button type="submit" class="btn btn-sm btn-success py-1 px-2 rounded-3 fw-semibold">Aprovar</button>
-                                        </form>
-                                        <form action="{{ url_for('curadoria_action', sub_id=sub.id) }}" method="POST" class="d-inline">
-                                            <input type="hidden" name="action" value="reject">
-                                            <button type="submit" class="btn btn-sm btn-outline-danger py-1 px-2 rounded-3 fw-semibold">Rejeitar</button>
-                                        </form>
-                                        {% endif %}
+                                        {% if can_manage %}
+                                            <!-- Botões Aprovar / Rejeitar -->
+                                            {% if sub.status == 'pendente' %}
+                                            <form action="{{ url_for('curadoria_action', sub_id=sub.id) }}" method="POST" class="d-inline">
+                                                <input type="hidden" name="action" value="approve">
+                                                <button type="submit" class="btn btn-sm btn-success py-1 px-2 rounded-3 fw-semibold">Aprovar</button>
+                                            </form>
+                                            <form action="{{ url_for('curadoria_action', sub_id=sub.id) }}" method="POST" class="d-inline">
+                                                <input type="hidden" name="action" value="reject">
+                                                <button type="submit" class="btn btn-sm btn-outline-danger py-1 px-2 rounded-3 fw-semibold">Rejeitar</button>
+                                            </form>
+                                            {% endif %}
 
-                                        <!-- Editar Atributos -->
-                                        <button type="button" class="btn btn-sm btn-warning text-dark py-1 px-2 rounded-3 fw-semibold" data-bs-toggle="modal" data-bs-target="#editModal_{{ sub.id }}" title="Editar Dicionário de Dados">
-                                            <i class="bi bi-pencil-square"></i>
-                                        </button>
-
-                                        <!-- Botão Excluir Strict -->
-                                        {% if can_delete %}
-                                        <form action="{{ url_for('delete_occurrence', sub_id=sub.id) }}" method="POST" class="d-inline" onsubmit="return confirm('Deseja realmente excluir este ponto/submissão do sistema? Esta ação é permanente.');">
-                                            <button type="submit" class="btn btn-sm btn-outline-danger py-1 px-2 rounded-3" title="Excluir do sistema">
-                                                <i class="bi bi-trash"></i>
+                                            <!-- Editar Atributos -->
+                                            <button type="button" class="btn btn-sm btn-warning text-dark py-1 px-2 rounded-3 fw-semibold" data-bs-toggle="modal" data-bs-target="#editModal_{{ sub.id }}" title="Editar Dicionário de Dados">
+                                                <i class="bi bi-pencil-square"></i>
                                             </button>
-                                        </form>
+
+                                            <!-- Botão Excluir -->
+                                            <form action="{{ url_for('delete_occurrence', sub_id=sub.id) }}" method="POST" class="d-inline" onsubmit="return confirm('Deseja realmente excluir este ponto/submissão do sistema? Esta ação é permanente.');">
+                                                <button type="submit" class="btn btn-sm btn-outline-danger py-1 px-2 rounded-3" title="Excluir do sistema">
+                                                    <i class="bi bi-trash"></i>
+                                                </button>
+                                            </form>
                                         {% else %}
-                                        <button type="button" class="btn btn-sm btn-outline-secondary py-1 px-2 rounded-3 opacity-50" disabled title="Apenas o Administrador Geral ou o responsável pelo cadastro ({{ sub.username }}) podem excluir este ponto.">
-                                            <i class="bi bi-trash-lock"></i>
-                                        </button>
+                                            <button type="button" class="btn btn-sm btn-outline-secondary py-1 px-2 rounded-3 opacity-50" disabled title="Apenas o Administrador Geral ou gestores da {{ level_label }} podem gerenciar este ponto.">
+                                                <i class="bi bi-lock-fill"></i>
+                                            </button>
                                         {% endif %}
                                     </div>
 
