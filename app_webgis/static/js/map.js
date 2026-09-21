@@ -2,26 +2,31 @@ document.addEventListener("DOMContentLoaded", function() {
     // Inicializa o mapa focado em Angra dos Reis
     var map = L.map('map').setView([-23.00, -44.31], 11);
 
-    // 1. Definição dos Mapas de Fundo (Basemaps)
+    // 1. Definição dos Mapas de Fundo (Basemaps 100% Gratuitos e sem Watermark)
     var googleSat = L.tileLayer('http://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
         maxZoom: 20,
         subdomains:['mt0','mt1','mt2','mt3'],
         attribution: '&copy; Google Satellite'
     });
 
-    var darkMatter = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    var esriDark = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
         maxZoom: 19,
-        attribution: '&copy; OpenStreetMap &copy; CARTO'
+        attribution: 'Tiles &copy; Esri &mdash; Dark Canvas'
     });
 
-    var cartoPositron = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+    var esriLight = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
         maxZoom: 19,
-        attribution: '&copy; OpenStreetMap &copy; CARTO'
+        attribution: 'Tiles &copy; Esri &mdash; Light Canvas'
     });
 
     var osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 19,
         attribution: '© OpenStreetMap'
+    });
+
+    var esriTopo = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}', {
+        maxZoom: 19,
+        attribution: 'Tiles &copy; Esri &mdash; Topographic'
     });
 
     var esriSatellite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
@@ -34,9 +39,10 @@ document.addEventListener("DOMContentLoaded", function() {
 
     var baseMapLayers = {
         'googleSat': googleSat,
-        'darkMatter': darkMatter,
-        'cartoPositron': cartoPositron,
+        'darkMatter': esriDark,
+        'cartoPositron': esriLight,
         'osm': osm,
+        'topo': esriTopo,
         'esri': esriSatellite
     };
 
@@ -79,9 +85,10 @@ document.addEventListener("DOMContentLoaded", function() {
 
     var baseMaps = {
         "Google Satellite (HD)": googleSat,
-        "Carto Dark Matter (Escuro)": darkMatter,
-        "Carto Positron (Claro)": cartoPositron,
+        "Dark Canvas (Escuro)": esriDark,
+        "Light Canvas (Claro)": esriLight,
         "OpenStreetMap (Ruas)": osm,
+        "Relevo Topográfico (Esri)": esriTopo,
         "Esri Satellite": esriSatellite
     };
 
