@@ -1091,11 +1091,28 @@ def upload_bulk_csv():
 @app.route('/api/occurrences')
 def get_occurrences():
     conn = get_db_connection()
-    points = conn.execute("SELECT * FROM submissions WHERE submission_type = 'point' AND status = 'aprovado'").fetchall()
+    points = conn.execute("""
+        SELECT * FROM submissions 
+        WHERE LOWER(TRIM(status)) = 'aprovado' 
+          AND (
+            submission_type = 'point' 
+            OR (lat IS NOT NULL AND lng IS NOT NULL AND CAST(lat AS text) NOT IN ('', '0', '0.0', 'None', 'null'))
+          )
+    """).fetchall()
     conn.close()
     features = []
     for p in points:
         p_dict = dict(p)
+        
+        try:
+            lat_val = float(p['lat'])
+            lng_val = float(p['lng'])
+        except (TypeError, ValueError):
+            continue
+            
+        if not (-90 <= lat_val <= 90 and -180 <= lng_val <= 180) or (lat_val == 0 and lng_val == 0):
+            continue
+
         import json
         m_list = []
         if p_dict.get('media_files_json'):
@@ -1107,6 +1124,7 @@ def get_occurrences():
             m_list.insert(0, p['media_filename'])
 
         media_urls = [url_for('serve_layer', filename=fn) for fn in m_list if fn]
+        primary_media_url = media_urls[0] if media_urls else None
         is_admin_geral = current_user.is_authenticated and (current_user.role_level == 'admin_geral')
         is_gestor = current_user.is_authenticated and (current_user.role in ['admin', 'org'] or getattr(current_user, 'funcao', 'agente') in ['gestor', 'gestor_agente'])
         is_owner = current_user.is_authenticated and (current_user.id == p['user_id'])
@@ -1127,8 +1145,8 @@ def get_occurrences():
             "uf": p_dict.get('uf') or 'RJ',
             "municipio": p_dict.get('municipio') or 'Angra dos Reis',
             "bairro": p_dict.get('bairro'),
-            "lat": p['lat'],
-            "lng": p['lng'],
+            "lat": lat_val,
+            "lng": lng_val,
             "zona": p_dict.get('zona'),
             "origem": p_dict.get('origem') or 'Curadoria',
             "responsavel_nome": p_dict.get('responsavel_nome') or 'Defesa Civil',
@@ -1227,7 +1245,7 @@ def get_occurrences():
             "type": "Feature",
             "geometry": {
                 "type": "Point",
-                "coordinates": [float(p['lng']), float(p['lat'])] if p['lng'] and p['lat'] else [0, 0]
+                "coordinates": [lng_val, lat_val]
             },
             "properties": props
         })
@@ -1652,7 +1670,14 @@ def download_export():
     
     if layer_type == 'occurrences':
         conn = get_db_connection()
-        query = "SELECT * FROM submissions WHERE submission_type = 'point' AND status = 'aprovado'"
+        query = """
+            SELECT * FROM submissions 
+            WHERE LOWER(TRIM(status)) = 'aprovado' 
+              AND (
+                submission_type = 'point' 
+                OR (lat IS NOT NULL AND lng IS NOT NULL AND CAST(lat AS text) NOT IN ('', '0', '0.0', 'None', 'null'))
+              )
+        """
         params = []
         if municipio_filter and municipio_filter != 'Todos':
             query += " AND municipio = ?"
