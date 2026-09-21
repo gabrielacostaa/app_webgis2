@@ -100,7 +100,33 @@ def load_user(user_id):
             matricula=u.get('matricula', ''),
             cpf=u.get('cpf', '')
         )
-    return None
+def parse_coordinate_value(val):
+    if val is None:
+        return None
+    val_str = str(val).strip()
+    if not val_str:
+        return None
+
+    is_negative = ('-' in val_str) or ('S' in val_str.upper()) or ('W' in val_str.upper()) or ('O' in val_str.upper())
+
+    if '.' in val_str and ',' in val_str:
+        if val_str.rfind(',') > val_str.rfind('.'):
+            val_str = val_str.replace('.', '').replace(',', '.')
+        else:
+            val_str = val_str.replace(',', '')
+    else:
+        val_str = val_str.replace(',', '.')
+
+    import re
+    cleaned = re.sub(r'[^0-9.]', '', val_str)
+    if not cleaned:
+        return None
+
+    try:
+        num = float(cleaned)
+        return -num if is_negative else num
+    except ValueError:
+        return None
 
 def upgrade_db():
     conn = get_db_connection()
@@ -537,8 +563,8 @@ def upload_file():
 def upload_point():
     title = request.form.get('title')
     description = request.form.get('description')
-    lat = request.form.get('lat')
-    lng = request.form.get('lng')
+    lat = parse_coordinate_value(request.form.get('lat'))
+    lng = parse_coordinate_value(request.form.get('lng'))
     data_evento = request.form.get('data_evento')
     
     responsavel_nome = request.form.get('responsavel_nome', '').strip() or (current_user.nome_completo or current_user.username if current_user.is_authenticated else 'Visitante do Geoportal')
@@ -743,13 +769,10 @@ def upload_bulk_csv():
 
         for idx, row in enumerate(reader):
             try:
-                raw_lat = str(row.get(lat_col, '')).replace(',', '.').strip()
-                raw_lng = str(row.get(lng_col, '')).replace(',', '.').strip()
-                if not raw_lat or not raw_lng:
+                lat = parse_coordinate_value(row.get(lat_col))
+                lng = parse_coordinate_value(row.get(lng_col))
+                if lat is None or lng is None:
                     continue
-
-                lat = float(raw_lat)
-                lng = float(raw_lng)
 
                 if not (-90 <= lat <= 90) or not (-180 <= lng <= 180):
                     if (-90 <= lng <= 90) and (-180 <= lat <= 180):
