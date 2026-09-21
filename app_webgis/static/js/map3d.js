@@ -1,291 +1,290 @@
 /**
  * MOVMASSA WebGIS - Visualizador 3D de Terreno e Ocorrências
- * Engine: MapLibre GL JS (latest) + DEM Terrain
+ * Engine: MapLibre GL JS v4.7.1 com Terreno DEM 3D
  */
 (function () {
     "use strict";
 
-    let map3d = null;
-    let markers3D = [];
-    let mapInitialized = false;
+    var map3d = null;
+    var markers3D = [];
+    var mapInitialized = false;
 
-    // Wait for DOM
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', setup);
-    } else {
-        setup();
-    }
-
-    function setup() {
-        const modal3D = document.getElementById("modal3DView");
+    function init() {
+        var modal3D = document.getElementById("modal3DView");
         if (!modal3D) return;
 
+        // Ao abrir o modal, inicializar ou redimensionar o mapa 3D
         modal3D.addEventListener("shown.bs.modal", function () {
-            const container = document.getElementById("cesiumContainer");
-            if (!container) return;
-
             if (!mapInitialized) {
-                // Small delay to ensure the modal is fully visible and container has dimensions
-                setTimeout(function () {
-                    initMap(container);
-                }, 400);
+                init3DMap();
             } else if (map3d) {
                 map3d.resize();
             }
         });
 
-        // Setup action buttons (even before map init)
+        // Botões de ação
         var btnFlyTo = document.getElementById("btn3DFlyToAngra");
-        if (btnFlyTo) btnFlyTo.addEventListener("click", flyToAngra);
+        if (btnFlyTo) {
+            btnFlyTo.addEventListener("click", function () {
+                if (!map3d) return;
+                map3d.flyTo({
+                    center: [-44.3181, -23.0067],
+                    zoom: 13.5,
+                    pitch: 60,
+                    bearing: 25,
+                    duration: 2500
+                });
+            });
+        }
 
         var btnTilt = document.getElementById("btn3DTiltOrbit");
-        if (btnTilt) btnTilt.addEventListener("click", orbit3D);
+        if (btnTilt) {
+            btnTilt.addEventListener("click", function () {
+                if (!map3d) return;
+                map3d.easeTo({
+                    bearing: map3d.getBearing() + 45,
+                    pitch: 65,
+                    duration: 1500
+                });
+            });
+        }
 
         var btnRefresh = document.getElementById("btn3DRefresh");
-        if (btnRefresh) btnRefresh.addEventListener("click", loadOccurrences);
+        if (btnRefresh) {
+            btnRefresh.addEventListener("click", function () {
+                load3DOccurrences();
+            });
+        }
     }
 
-    function initMap(container) {
-        // Prevent double init
-        if (mapInitialized) return;
-        mapInitialized = true;
+    function init3DMap() {
+        var container = document.getElementById("map3dContainer");
+        var overlay = document.getElementById("map3dOverlayLoading");
+        if (!container) return;
 
-        // Check MapLibre availability
         if (typeof maplibregl === "undefined") {
-            showError(container, "MapLibre GL JS não foi carregado. Verifique sua conexão com a internet.");
-            mapInitialized = false;
+            if (overlay) {
+                overlay.innerHTML = '<div class="text-center p-4"><i class="bi bi-exclamation-triangle-fill text-warning fs-1 mb-3"></i><h5 class="fw-bold">Falha ao carregar biblioteca MapLibre GL</h5><p class="text-muted small">Verifique sua conexão e tente novamente.</p></div>';
+            }
             return;
         }
-
-        // Check WebGL support
-        var canvas = document.createElement("canvas");
-        var gl = canvas.getContext("webgl2") || canvas.getContext("webgl") || canvas.getContext("experimental-webgl");
-        if (!gl) {
-            showError(container, "Seu navegador não suporta WebGL. Ative a aceleração de hardware nas configurações.");
-            mapInitialized = false;
-            return;
-        }
-
-        // Show loading
-        container.innerHTML = '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;background:#0f172a;color:#fff;">' +
-            '<div class="spinner-border text-info mb-3" role="status"></div>' +
-            '<p class="fw-semibold mb-1">Inicializando Mapa 3D...</p>' +
-            '<p class="small text-muted">Carregando imagens de satélite e elevação</p>' +
-            '</div>';
 
         try {
-            // Create map with ONLY satellite tiles (no terrain in style)
+            mapInitialized = true;
+
             map3d = new maplibregl.Map({
-                container: container,
+                container: "map3dContainer",
                 style: {
                     version: 8,
                     sources: {
-                        "satellite": {
+                        "esri-satellite": {
                             type: "raster",
                             tiles: [
                                 "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
                             ],
                             tileSize: 256,
-                            maxzoom: 18,
-                            attribution: "Esri Satellite"
+                            maxzoom: 19,
+                            attribution: "Esri Satellite Imagery"
                         }
                     },
                     layers: [
                         {
-                            id: "satellite",
+                            id: "esri-satellite-layer",
                             type: "raster",
-                            source: "satellite"
+                            source: "esri-satellite",
+                            minzoom: 0,
+                            maxzoom: 19
                         }
                     ]
                 },
-                center: [-44.3181, -23.0067],
+                center: [-44.3181, -23.0067], // Angra dos Reis
                 zoom: 13,
-                pitch: 60,
+                pitch: 60, // Inclinação 3D
                 bearing: 25,
-                maxPitch: 85
+                maxPitch: 85,
+                antialias: true
             });
 
-            // Add controls
-            map3d.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), "top-left");
+            // Controles de Navegação 3D
+            map3d.addControl(new maplibregl.NavigationControl({
+                visualizePitch: true,
+                showZoom: true,
+                showCompass: true
+            }), "top-left");
+
             map3d.addControl(new maplibregl.ScaleControl({ maxWidth: 200 }), "bottom-right");
 
-            // On map load - add terrain and occurrences
             map3d.on("load", function () {
-                console.log("[MOVMASSA 3D] Mapa carregado com sucesso");
+                console.log("[MOVMASSA 3D] Mapa inicializado com sucesso.");
 
-                // Try to add 3D terrain
-                addTerrain();
+                // Adicionar relevo 3D (DEM)
+                try {
+                    map3d.addSource("terrain-dem", {
+                        type: "raster-dem",
+                        url: "https://demotiles.maplibre.org/terrain-tiles/tiles.json",
+                        tileSize: 256
+                    });
 
-                // Load occurrences
-                loadOccurrences();
+                    map3d.setTerrain({
+                        source: "terrain-dem",
+                        exaggeration: 1.5
+                    });
+                    console.log("[MOVMASSA 3D] Terreno 3D ativado.");
+                } catch (tErr) {
+                    console.warn("[MOVMASSA 3D] Terreno DEM não ativado:", tErr);
+                }
+
+                // Ocultar overlay de carregamento
+                if (overlay) {
+                    overlay.style.opacity = "0";
+                    setTimeout(function () {
+                        overlay.style.display = "none";
+                    }, 400);
+                }
+
+                // Carregar ocorrências
+                load3DOccurrences();
             });
 
             map3d.on("error", function (e) {
-                console.warn("[MOVMASSA 3D] Map error:", e.error ? e.error.message : e);
+                console.warn("[MOVMASSA 3D] Erro no mapa:", e);
             });
 
         } catch (err) {
-            console.error("[MOVMASSA 3D] Init error:", err);
-            showError(container, "Erro ao criar o mapa: " + (err.message || String(err)));
+            console.error("[MOVMASSA 3D] Erro ao instanciar mapa:", err);
+            if (overlay) {
+                overlay.innerHTML = '<div class="text-center p-4"><i class="bi bi-exclamation-triangle-fill text-warning fs-1 mb-3"></i><h5 class="fw-bold">Erro ao abrir visualizador 3D</h5><p class="text-danger small">' + (err.message || err) + '</p></div>';
+            }
             mapInitialized = false;
         }
     }
 
-    function addTerrain() {
-        if (!map3d) return;
-
-        try {
-            // Use MapLibre's official demo terrain tiles (reliable, free, no auth)
-            map3d.addSource("demTerrain", {
-                type: "raster-dem",
-                tiles: [
-                    "https://demotiles.maplibre.org/terrain-tiles/{z}/{x}/{y}.png"
-                ],
-                tileSize: 256
-            });
-
-            map3d.setTerrain({
-                source: "demTerrain",
-                exaggeration: 1.5
-            });
-
-            console.log("[MOVMASSA 3D] Terreno 3D ativado com sucesso");
-        } catch (e) {
-            console.warn("[MOVMASSA 3D] Terreno 3D indisponível (mapa continua plano):", e.message || e);
-
-            // Fallback: try AWS Terrarium tiles
-            try {
-                map3d.addSource("demTerrain2", {
-                    type: "raster-dem",
-                    tiles: [
-                        "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png"
-                    ],
-                    tileSize: 256,
-                    encoding: "terrarium"
-                });
-
-                map3d.setTerrain({
-                    source: "demTerrain2",
-                    exaggeration: 1.5
-                });
-                console.log("[MOVMASSA 3D] Terreno 3D (fallback AWS) ativado");
-            } catch (e2) {
-                console.warn("[MOVMASSA 3D] Terreno fallback também falhou:", e2.message || e2);
-            }
-        }
-    }
-
-    function showError(container, msg) {
-        container.innerHTML = '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;background:#0f172a;color:#fff;padding:2rem;text-align:center;">' +
-            '<i class="bi bi-exclamation-triangle-fill text-warning" style="font-size:3rem;margin-bottom:1rem;"></i>' +
-            '<h5 class="fw-bold">Erro no Mapa 3D</h5>' +
-            '<p class="text-muted small">' + msg + '</p>' +
-            '<button class="btn btn-outline-info btn-sm mt-2" onclick="location.reload()">Recarregar Página</button>' +
-            '</div>';
-    }
-
-    function flyToAngra() {
-        if (!map3d) return;
-        map3d.flyTo({
-            center: [-44.3181, -23.0067],
-            zoom: 13.5,
-            pitch: 60,
-            bearing: 25,
-            duration: 2500
-        });
-    }
-
-    function orbit3D() {
-        if (!map3d) return;
-        map3d.easeTo({
-            bearing: map3d.getBearing() + 45,
-            pitch: 65,
-            duration: 1500
-        });
-    }
-
-    function createMarkerEl() {
+    function createMarkerPin() {
         var el = document.createElement("div");
-        el.style.cssText = "width:32px;height:32px;border-radius:50%;background:#0284c7;border:3px solid #fff;box-shadow:0 4px 12px rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;color:#fff;cursor:pointer;font-size:16px;transition:transform .2s;";
+        el.className = "marker-3d-pin";
+        el.style.width = "34px";
+        el.style.height = "34px";
+        el.style.borderRadius = "50%";
+        el.style.backgroundColor = "#ef4444";
+        el.style.border = "3px solid #ffffff";
+        el.style.boxShadow = "0 6px 16px rgba(0, 0, 0, 0.6)";
+        el.style.display = "flex";
+        el.style.alignItems = "center";
+        el.style.justifyContent = "center";
+        el.style.color = "#ffffff";
+        el.style.cursor = "pointer";
+        el.style.fontSize = "17px";
+        el.style.transition = "transform 0.2s ease";
+
         el.innerHTML = '<i class="bi bi-geo-alt-fill"></i>';
-        el.onmouseenter = function () { el.style.transform = "scale(1.3)"; };
-        el.onmouseleave = function () { el.style.transform = "scale(1)"; };
+
+        el.addEventListener("mouseenter", function () {
+            el.style.transform = "scale(1.25)";
+        });
+        el.addEventListener("mouseleave", function () {
+            el.style.transform = "scale(1.0)";
+        });
+
         return el;
     }
 
-    function loadOccurrences() {
+    function load3DOccurrences() {
         if (!map3d) return;
 
-        // Clear previous
+        // Limpar marcadores anteriores
         for (var i = 0; i < markers3D.length; i++) {
             markers3D[i].remove();
         }
         markers3D = [];
 
-        var spinner = document.getElementById("status3DLoading");
-        if (spinner) spinner.style.display = "inline-block";
+        var statusSpan = document.getElementById("status3DLoading");
+        if (statusSpan) statusSpan.style.display = "inline-block";
 
         fetch("/api/occurrences")
             .then(function (res) {
-                if (!res.ok) throw new Error("HTTP " + res.status);
+                if (!res.ok) throw new Error("Status HTTP " + res.status);
                 return res.json();
             })
-            .then(function (data) {
-                if (!data || !data.features) return;
+            .then(function (geoJsonData) {
+                if (!geoJsonData || !geoJsonData.features) return;
 
-                console.log("[MOVMASSA 3D]", data.features.length, "ocorrências carregadas");
+                console.log("[MOVMASSA 3D] " + geoJsonData.features.length + " pontos carregados.");
 
-                for (var i = 0; i < data.features.length; i++) {
-                    var feat = data.features[i];
-                    if (!feat.geometry || !feat.geometry.coordinates) continue;
+                geoJsonData.features.forEach(function (feat) {
+                    var coords = feat.geometry ? feat.geometry.coordinates : null;
+                    if (!coords || coords.length < 2) return;
 
-                    var lng = parseFloat(feat.geometry.coordinates[0]);
-                    var lat = parseFloat(feat.geometry.coordinates[1]);
-                    if (isNaN(lat) || isNaN(lng) || (lat === 0 && lng === 0)) continue;
+                    var lng = parseFloat(coords[0]);
+                    var lat = parseFloat(coords[1]);
+                    var props = feat.properties || {};
 
-                    var p = feat.properties || {};
+                    if (isNaN(lat) || isNaN(lng) || (lat === 0 && lng === 0)) return;
 
-                    var html = '<div style="font-family:sans-serif;font-size:12px;max-width:300px;">' +
-                        '<div style="background:#0284c7;color:#fff;padding:6px 10px;border-radius:6px;margin-bottom:8px;font-weight:bold;">📍 ' + (p.title || "Ocorrência") + '</div>' +
-                        '<div style="margin-bottom:6px;"><span style="background:#ef4444;color:#fff;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:bold;">' + (p.tipologia || "Deslizamento") + '</span></div>' +
-                        '<p style="margin:4px 0;font-size:11px;color:#555;">' + (p.description || "Sem descrição.") + '</p>' +
-                        '<div style="background:#f8f9fa;border:1px solid #ddd;border-radius:6px;padding:6px;font-size:10px;">' +
-                        '<div><b>Responsável:</b> ' + (p.responsavel_nome || "N/A") + '</div>' +
-                        '<div><b>Município:</b> ' + (p.municipio || "N/A") + ' - ' + (p.uf || "RJ") + '</div>' +
-                        (p.data_evento ? '<div><b>Data:</b> ' + p.data_evento + '</div>' : '') +
-                        '</div>';
-
-                    if (p.media_urls && p.media_urls.length > 0) {
-                        html += '<div style="margin-top:8px;"><b>📸 Mídias (' + p.media_urls.length + '):</b><br>';
-                        for (var j = 0; j < Math.min(p.media_urls.length, 3); j++) {
-                            var url = p.media_urls[j];
-                            if (url.match(/\.(mp4|mov)$/i)) {
-                                html += '<video src="' + url + '" controls style="width:100%;max-height:120px;border-radius:4px;margin-top:4px;"></video>';
+                    var mediaHtml = "";
+                    if (props.media_urls && props.media_urls.length > 0) {
+                        mediaHtml += '<div style="margin-top:10px;"><strong>📸 Mídias Registradas (' + props.media_urls.length + '):</strong><br><div style="display:flex; flex-direction:column; gap:6px; margin-top:4px;">';
+                        props.media_urls.forEach(function (url) {
+                            if (url.toLowerCase().indexOf(".mp4") !== -1 || url.toLowerCase().indexOf(".mov") !== -1) {
+                                mediaHtml += '<video src="' + url + '" controls style="width:100%; max-height:150px; border-radius:6px;"></video>';
                             } else {
-                                html += '<img src="' + url + '" style="width:100%;max-height:120px;object-fit:cover;border-radius:4px;margin-top:4px;" />';
+                                mediaHtml += '<a href="' + url + '" target="_blank"><img src="' + url + '" style="width:100%; max-height:150px; object-fit:cover; border-radius:6px;" /></a>';
                             }
-                        }
-                        html += '</div>';
+                        });
+                        mediaHtml += '</div></div>';
                     }
 
-                    html += '<div style="margin-top:8px;"><a href="/api/occurrence/' + (p.id || 0) + '/pdf" target="_blank" style="display:block;text-align:center;background:#2563eb;color:#fff;text-decoration:none;padding:6px;border-radius:6px;font-weight:bold;font-size:11px;">📄 Relatório PDF</a></div>';
-                    html += '</div>';
+                    var popupHtml = '' +
+                        '<div style="font-family: \'Plus Jakarta Sans\', sans-serif; font-size:12px; color:#1e293b; max-width:320px; padding:2px;">' +
+                        '  <div style="background:#0284c7; color:#ffffff; padding:6px 10px; border-radius:6px; margin-bottom:8px; font-weight:bold;">' +
+                        '    📍 ' + (props.title || 'Ocorrência Aprovada') +
+                        '  </div>' +
+                        '  <div style="margin-bottom:6px;">' +
+                        '    <span style="background:#ef4444; color:#fff; padding:2px 6px; border-radius:4px; font-size:10px; font-weight:bold;">' +
+                        '      ' + (props.tipologia || 'Deslizamento de Encosta') +
+                        '    </span>' +
+                        '    <span style="background:#f1f5f9; color:#334155; padding:2px 6px; border-radius:4px; font-size:10px; border:1px solid #cbd5e1; margin-left:4px;">' +
+                        '      ' + (props.municipio || 'Angra dos Reis') + ' - ' + (props.uf || 'RJ') +
+                        '    </span>' +
+                        '  </div>' +
+                        '  <p style="margin:6px 0; font-size:11px; color:#475569;">' +
+                        '    ' + (props.description || 'Sem descrição complementar.') +
+                        '  </p>' +
+                        '  <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; padding:6px; margin-top:6px; font-size:10px;">' +
+                        '    <div><strong>📋 Responsável:</strong> ' + (props.responsavel_nome || 'Defesa Civil') + '</div>' +
+                        '    <div><strong>Esfera:</strong> ' + (props.responsavel_nivel || 'Geral') + '</div>' +
+                        '    <div><strong>CPF:</strong> ' + (props.responsavel_cpf || 'N/A') + ' | <strong>Matrícula:</strong> ' + (props.responsavel_matricula || 'N/A') + '</div>' +
+                        (props.data_evento ? '<div><strong>Data Evento:</strong> ' + props.data_evento + '</div>' : '') +
+                        '  </div>' +
+                        mediaHtml +
+                        '  <div style="margin-top:10px;">' +
+                        '    <a href="/api/occurrence/' + props.id + '/pdf" target="_blank" style="display:block; text-align:center; background:#2563eb; color:#fff; text-decoration:none; padding:6px; border-radius:6px; font-weight:bold; font-size:11px;">' +
+                        '      📄 Abrir Relatório PDF' +
+                        '    </a>' +
+                        '  </div>' +
+                        '</div>';
 
-                    var popup = new maplibregl.Popup({ offset: 20, maxWidth: "320px" }).setHTML(html);
-                    var marker = new maplibregl.Marker({ element: createMarkerEl() })
+                    var popup = new maplibregl.Popup({ offset: 25, maxWidth: "340px" }).setHTML(popupHtml);
+                    var el = createMarkerPin();
+
+                    var marker = new maplibregl.Marker({ element: el })
                         .setLngLat([lng, lat])
                         .setPopup(popup)
                         .addTo(map3d);
 
                     markers3D.push(marker);
-                }
+                });
             })
             .catch(function (err) {
-                console.error("[MOVMASSA 3D] Erro ao carregar ocorrências:", err);
+                console.error("[MOVMASSA 3D] Erro ao buscar ocorrências:", err);
             })
             .finally(function () {
-                if (spinner) spinner.style.display = "none";
+                if (statusSpan) statusSpan.style.display = "none";
             });
     }
 
+    if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", init);
+    } else {
+        init();
+    }
 })();

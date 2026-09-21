@@ -297,8 +297,13 @@
                     <button type="button" class="btn-close btn-close-white ms-2" data-bs-dismiss="modal" aria-label="Fechar"></button>
                 </div>
             </div>
-            <div class="modal-body p-0 position-relative overflow-hidden">
-                <div id="cesiumContainer" style="width: 100%; height: calc(100vh - 56px); background: #000;"></div>
+            <div class="modal-body p-0 position-relative" style="height: calc(100vh - 56px); overflow: hidden; background: #0f172a;">
+                <div id="map3dContainer" style="width: 100%; height: 100%;"></div>
+                <div id="map3dOverlayLoading" class="position-absolute top-0 start-0 w-100 h-100 d-flex flex-column align-items-center justify-content-center text-white" style="background: #0f172a; z-index: 10; pointer-events: none; transition: opacity 0.4s ease;">
+                    <div class="spinner-border text-info mb-3" role="status" style="width: 3rem; height: 3rem;"></div>
+                    <h6 class="fw-bold mb-1">Carregando Visualizador 3D...</h6>
+                    <p class="small text-muted mb-0">Carregando imagens de satélite e modelo de elevação digital</p>
+                </div>
             </div>
         </div>
     </div>
