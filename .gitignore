@@ -1,6 +1,11 @@
 test_venv/
 __pycache__/
 *.geojson
-test_venv/
-__pycache__/
-*.geojson
+*.db
+*.sqlite3
+.DS_Store
+*.docx
+*.qmd
+*.pyc
+.env
+venv/
