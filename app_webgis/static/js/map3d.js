@@ -1,180 +1,169 @@
 /**
- * MOVMASSA WebGIS - Visualizador 3D de Ocorrências e Terreno (CesiumJS)
+ * MOVMASSA WebGIS - Visualizador 3D de Terreno e Ocorrências (MapLibre GL 3D)
  */
 document.addEventListener("DOMContentLoaded", function () {
-    let cesiumViewer = null;
-    let occurrencesDataSource = null;
+    let map3d = null;
+    let markers3D = [];
     const modal3D = document.getElementById("modal3DView");
 
     if (!modal3D) return;
 
     modal3D.addEventListener("shown.bs.modal", function () {
-        if (!cesiumViewer) {
-            initCesium3DViewer();
+        if (!map3d) {
+            initMapLibre3DViewer();
         } else {
-            try {
-                cesiumViewer.resize();
-            } catch(e) {
-                console.log("Resize error:", e);
-            }
+            setTimeout(() => {
+                map3d.resize();
+            }, 200);
         }
     });
 
-    function createPinDataUrl(colorHex) {
-        const canvas = document.createElement("canvas");
-        canvas.width = 48;
-        canvas.height = 64;
-        const ctx = canvas.getContext("2d");
-
-        // Desenhar pino estilo gota GPS 3D
-        ctx.beginPath();
-        ctx.arc(24, 22, 18, Math.PI * 0.8, Math.PI * 0.2, false);
-        ctx.lineTo(24, 60);
-        ctx.closePath();
-
-        ctx.fillStyle = colorHex;
-        ctx.shadowColor = "rgba(0,0,0,0.5)";
-        ctx.shadowBlur = 8;
-        ctx.shadowOffsetY = 4;
-        ctx.fill();
-
-        ctx.lineWidth = 3;
-        ctx.strokeStyle = "#FFFFFF";
-        ctx.stroke();
-
-        // Círculo interno branco
-        ctx.shadowBlur = 0;
-        ctx.beginPath();
-        ctx.arc(24, 22, 9, 0, Math.PI * 2);
-        ctx.fillStyle = "#FFFFFF";
-        ctx.fill();
-
-        // Ícone interno
-        ctx.beginPath();
-        ctx.arc(24, 22, 4, 0, Math.PI * 2);
-        ctx.fillStyle = colorHex;
-        ctx.fill();
-
-        return canvas.toDataURL();
-    }
-
-    function initCesium3DViewer() {
+    function initMapLibre3DViewer() {
         const container = document.getElementById("cesiumContainer");
         if (!container) return;
 
         try {
-            Cesium.Ion.defaultAccessToken = '';
-
-            const esriImageryProvider = new Cesium.UrlTemplateImageryProvider({
-                url: 'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-                credit: 'Esri World Imagery'
-            });
-
-            cesiumViewer = new Cesium.Viewer("cesiumContainer", {
-                imageryProvider: esriImageryProvider,
-                baseLayerPicker: false,
-                geocoder: false,
-                homeButton: false,
-                sceneModePicker: true,
-                navigationHelpButton: false,
-                animation: false,
-                timeline: false,
-                fullscreenButton: false,
-                infoBox: true,
-                selectionIndicator: true,
-                terrainProvider: new Cesium.EllipsoidTerrainProvider()
-            });
-
-            // Tentar ativar terreno global com relevo 3D caso disponível
-            if (Cesium.createWorldTerrainAsync) {
-                Cesium.createWorldTerrainAsync({
-                    requestWaterMask: false,
-                    requestVertexNormals: true
-                }).then(terrain => {
-                    if (cesiumViewer && !cesiumViewer.isDestroyed()) {
-                        cesiumViewer.terrainProvider = terrain;
+            // Estilo do Mapa 3D: Satélite Esri + Terreno 3D Terrarium (Elevação de Relevo)
+            const mapStyle = {
+                version: 8,
+                sources: {
+                    "esri-satellite": {
+                        type: "raster",
+                        tiles: ["https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"],
+                        tileSize: 256,
+                        attribution: "Esri World Imagery"
+                    },
+                    "terrain-dem": {
+                        type: "raster-dem",
+                        tiles: ["https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png"],
+                        tileSize: 256,
+                        encoding: "terrarium"
                     }
-                }).catch(err => {
-                    console.log("Usando terreno esférico padrão:", err);
-                });
-            }
+                },
+                layers: [
+                    {
+                        id: "satellite-layer",
+                        type: "raster",
+                        source: "esri-satellite",
+                        minzoom: 0,
+                        maxzoom: 19
+                    }
+                ],
+                terrain: {
+                    source: "terrain-dem",
+                    exaggeration: 1.5
+                }
+            };
 
-            // Posicionar câmera inicialmente sobre Angra dos Reis (Ângulo de Visão Oblíqua 3D)
-            flyToAngra();
+            map3d = new maplibregl.Map({
+                container: "cesiumContainer",
+                style: mapStyle,
+                center: [-44.3181, -23.0067], // Angra dos Reis
+                zoom: 13,
+                pitch: 60, // Inclinação 3D de 60 graus
+                bearing: 25, // Rotação inicial 3D
+                maxPitch: 85,
+                antialias: true
+            });
 
-            // Carregar pontos de ocorrência
-            load3DOccurrences();
+            // Adicionar controles de navegação 3D (Bússola e Zoom)
+            map3d.addControl(new maplibregl.NavigationControl({
+                visualizePitch: true,
+                showZoom: true,
+                showCompass: true
+            }), 'top-left');
+
+            map3d.on('load', function () {
+                load3DOccurrences();
+            });
 
             // Configurar botões de ação do Modal 3D
             const btnFlyTo = document.getElementById("btn3DFlyToAngra");
             if (btnFlyTo) btnFlyTo.onclick = flyToAngra;
 
             const btnTilt = document.getElementById("btn3DTiltOrbit");
-            if (btnTilt) btnTilt.onclick = tiltOrbitCamera;
+            if (btnTilt) btnTilt.onclick = orbit3D;
 
             const btnRefresh = document.getElementById("btn3DRefresh");
             if (btnRefresh) btnRefresh.onclick = load3DOccurrences;
 
         } catch (err) {
-            console.error("Erro ao inicializar Cesium 3D:", err);
+            console.error("Erro ao inicializar MapLibre 3D:", err);
             container.innerHTML = `
                 <div class="d-flex flex-column align-items-center justify-content-center h-100 text-white p-4 text-center" style="background:#0f172a;">
                     <i class="bi bi-exclamation-triangle-fill text-warning fs-1 mb-3"></i>
-                    <h5 class="fw-bold">Não foi possível carregar o motor 3D neste navegador</h5>
+                    <h5 class="fw-bold">Não foi possível carregar o mapa 3D neste navegador</h5>
                     <p class="text-muted small mb-0">Verifique se a aceleração de hardware (WebGL) está ativada nas configurações do seu navegador.</p>
-                    <p class="text-danger small mt-2">Erro detalhado: ${err.message || err}</p>
+                    <p class="text-danger small mt-2">Erro: ${err.message || err}</p>
                 </div>
             `;
         }
     }
 
     function flyToAngra() {
-        if (!cesiumViewer) return;
-        cesiumViewer.camera.flyTo({
-            destination: Cesium.Cartesian3.fromDegrees(-44.3181, -23.0067, 4500.0),
-            orientation: {
-                heading: Cesium.Math.toRadians(15.0),
-                pitch: Cesium.Math.toRadians(-35.0),
-                roll: 0.0
-            },
-            duration: 2.5
+        if (!map3d) return;
+        map3d.flyTo({
+            center: [-44.3181, -23.0067],
+            zoom: 13.5,
+            pitch: 60,
+            bearing: 25,
+            duration: 2500
         });
     }
 
-    function tiltOrbitCamera() {
-        if (!cesiumViewer) return;
-        const currentPitch = cesiumViewer.camera.pitch;
-        const targetPitch = currentPitch > -0.5 ? -0.8 : -0.3;
-        cesiumViewer.camera.flyTo({
-            destination: cesiumViewer.camera.position,
-            orientation: {
-                heading: cesiumViewer.camera.heading + Cesium.Math.toRadians(45.0),
-                pitch: targetPitch,
-                roll: 0.0
-            },
-            duration: 1.5
+    function orbit3D() {
+        if (!map3d) return;
+        const currentBearing = map3d.getBearing();
+        map3d.easeTo({
+            bearing: currentBearing + 45,
+            pitch: 65,
+            duration: 1500
         });
+    }
+
+    function create3DMarkerElement() {
+        const el = document.createElement('div');
+        el.className = 'marker-3d-pin';
+        el.style.width = '36px';
+        el.style.height = '36px';
+        el.style.borderRadius = '50%';
+        el.style.backgroundColor = '#0284c7';
+        el.style.border = '3px solid #ffffff';
+        el.style.boxShadow = '0 6px 16px rgba(0, 0, 0, 0.6)';
+        el.style.display = 'flex';
+        el.style.alignItems = 'center';
+        el.style.justifyContent = 'center';
+        el.style.color = '#ffffff';
+        el.style.cursor = 'pointer';
+        el.style.fontSize = '18px';
+        el.style.transition = 'transform 0.2s ease-in-out';
+
+        el.innerHTML = '<i class="bi bi-geo-alt-fill"></i>';
+
+        el.addEventListener('mouseenter', () => {
+            el.style.transform = 'scale(1.25)';
+        });
+        el.addEventListener('mouseleave', () => {
+            el.style.transform = 'scale(1.0)';
+        });
+
+        return el;
     }
 
     function load3DOccurrences() {
-        if (!cesiumViewer) return;
+        if (!map3d) return;
 
-        // Remover fonte de dados anterior se existir
-        if (occurrencesDataSource) {
-            cesiumViewer.dataSources.remove(occurrencesDataSource, true);
-        }
+        // Limpar marcadores anteriores
+        markers3D.forEach(m => m.remove());
+        markers3D = [];
 
         const statusSpan = document.getElementById("status3DLoading");
         if (statusSpan) statusSpan.style.display = "inline-block";
-
-        const pinBlueUrl = createPinDataUrl("#0284c7");
 
         fetch("/api/occurrences")
             .then(res => res.json())
             .then(geoJsonData => {
                 if (!geoJsonData || !geoJsonData.features) return;
-
-                occurrencesDataSource = new Cesium.CustomDataSource("Ocorrencias3D");
 
                 geoJsonData.features.forEach(feat => {
                     const coords = feat.geometry ? feat.geometry.coordinates : null;
@@ -186,28 +175,21 @@ document.addEventListener("DOMContentLoaded", function () {
 
                     if (isNaN(lat) || isNaN(lng) || (lat === 0 && lng === 0)) return;
 
-                    const altStemTop = 80.0; // Elevação do pino acima do terreno (metros)
-
-                    // Posição no solo e no topo da haste 3D
-                    const groundPos = Cesium.Cartesian3.fromDegrees(lng, lat, 0);
-                    const topPos = Cesium.Cartesian3.fromDegrees(lng, lat, altStemTop);
-
-                    // Descrição em HTML formatada para a InfoBox do Cesium
                     let mediaHtml = "";
                     if (props.media_urls && props.media_urls.length > 0) {
-                        mediaHtml += `<div style="margin-top:10px;"><strong>📸 Mídias Registradas (${props.media_urls.length}):</strong><br>`;
+                        mediaHtml += `<div style="margin-top:10px;"><strong>📸 Mídias Registradas (${props.media_urls.length}):</strong><br><div style="display:flex; flex-direction:column; gap:6px; margin-top:4px;">`;
                         props.media_urls.forEach(url => {
                             if (url.toLowerCase().endsWith(".mp4") || url.toLowerCase().endsWith(".mov")) {
-                                mediaHtml += `<video src="${url}" controls style="width:100%; max-height:160px; margin-top:4px; border-radius:6px;"></video>`;
+                                mediaHtml += `<video src="${url}" controls style="width:100%; max-height:160px; border-radius:6px;"></video>`;
                             } else {
-                                mediaHtml += `<a href="${url}" target="_blank"><img src="${url}" style="width:100%; max-height:160px; object-fit:cover; margin-top:4px; border-radius:6px;" /></a>`;
+                                mediaHtml += `<a href="${url}" target="_blank"><img src="${url}" style="width:100%; max-height:160px; object-fit:cover; border-radius:6px;" /></a>`;
                             }
                         });
-                        mediaHtml += `</div>`;
+                        mediaHtml += `</div></div>`;
                     }
 
-                    const descriptionHtml = `
-                        <div style="font-family: 'Plus Jakarta Sans', sans-serif; font-size:12px; color:#1e293b; padding:4px;">
+                    const popupHtml = `
+                        <div style="font-family: 'Plus Jakarta Sans', sans-serif; font-size:12px; color:#1e293b; max-width:320px; padding:2px;">
                             <div style="background:#0284c7; color:#ffffff; padding:6px 10px; border-radius:6px; margin-bottom:8px; font-weight:bold;">
                                 📍 ${props.title || 'Ocorrência Aprovada'}
                             </div>
@@ -237,35 +219,18 @@ document.addEventListener("DOMContentLoaded", function () {
                         </div>
                     `;
 
-                    // Haste Vertical 3D conectando o terreno ao pino
-                    occurrencesDataSource.entities.add({
-                        name: `Haste 3D #${props.id}`,
-                        polyline: {
-                            positions: [groundPos, topPos],
-                            width: 3,
-                            material: new Cesium.ColorMaterialProperty(Cesium.Color.fromCssColorString('#38bdf8').withAlpha(0.85))
-                        }
-                    });
+                    const popup = new maplibregl.Popup({ offset: 25, maxWidth: '340px' }).setHTML(popupHtml);
+                    const el = create3DMarkerElement();
 
-                    // Pino 3D
-                    occurrencesDataSource.entities.add({
-                        id: `occ_3d_${props.id}`,
-                        name: props.title || `Ocorrência #${props.id}`,
-                        position: topPos,
-                        billboard: {
-                            image: pinBlueUrl,
-                            verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
-                            heightReference: Cesium.HeightReference.NONE,
-                            scale: 0.85,
-                            disableDepthTestDistance: Number.POSITIVE_INFINITY
-                        },
-                        description: descriptionHtml
-                    });
+                    const marker = new maplibregl.Marker({ element: el })
+                        .setLngLat([lng, lat])
+                        .setPopup(popup)
+                        .addTo(map3d);
+
+                    markers3D.push(marker);
                 });
-
-                cesiumViewer.dataSources.add(occurrencesDataSource);
             })
-            .catch(err => console.error("Erro ao carregar 3D:", err))
+            .catch(err => console.error("Erro ao carregar pontos 3D:", err))
             .finally(() => {
                 if (statusSpan) statusSpan.style.display = "none";
             });
