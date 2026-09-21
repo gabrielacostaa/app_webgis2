@@ -4,6 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MOVMASSA - Geoportal WebGIS</title>
+    <!-- Dark / Light Theme Immediate Init -->
+    <script>
+        (function() {
+            const savedTheme = localStorage.getItem('theme') || 'light';
+            document.documentElement.setAttribute('data-bs-theme', savedTheme);
+        })();
+    </script>
     <!-- Bootstrap 5 CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <!-- Bootstrap Icons -->
@@ -64,6 +71,14 @@
                 </ul>
 
                 <ul class="navbar-nav ms-auto align-items-lg-center gap-2">
+                    <!-- Botão Alternar Tema Claro / Escuro -->
+                    <li class="nav-item me-lg-2">
+                        <button type="button" id="btnThemeToggle" class="btn btn-outline-light btn-sm rounded-pill px-3 py-1 d-flex align-items-center gap-1.5 border-secondary shadow-sm" title="Alternar Modo Escuro / Claro">
+                            <i id="themeToggleIcon" class="bi bi-moon-stars-fill text-warning"></i>
+                            <span id="themeToggleText" class="small fw-semibold">Modo Escuro</span>
+                        </button>
+                    </li>
+
                     {% if current_user.is_authenticated %}
                         {% set level_label = {
                             'admin_geral': 'Administrador Geral',
@@ -137,6 +152,39 @@
     <script src="https://unpkg.com/leaflet.markercluster/dist/leaflet.markercluster.js"></script>
     <!-- MapLibre GL 3D JS -->
     <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
+    
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const btnToggle = document.getElementById('btnThemeToggle');
+        const iconToggle = document.getElementById('themeToggleIcon');
+        const textToggle = document.getElementById('themeToggleText');
+
+        function applyTheme(theme) {
+            document.documentElement.setAttribute('data-bs-theme', theme);
+            localStorage.setItem('theme', theme);
+            if (iconToggle && textToggle) {
+                if (theme === 'dark') {
+                    iconToggle.className = 'bi bi-sun-fill text-warning';
+                    textToggle.textContent = 'Modo Claro';
+                } else {
+                    iconToggle.className = 'bi bi-moon-stars-fill text-warning';
+                    textToggle.textContent = 'Modo Escuro';
+                }
+            }
+        }
+
+        const currentTheme = localStorage.getItem('theme') || 'light';
+        applyTheme(currentTheme);
+
+        if (btnToggle) {
+            btnToggle.addEventListener('click', function() {
+                const activeTheme = document.documentElement.getAttribute('data-bs-theme') || 'light';
+                const newTheme = activeTheme === 'dark' ? 'light' : 'dark';
+                applyTheme(newTheme);
+            });
+        }
+    });
+    </script>
     {% block scripts %}{% endblock %}
 </body>
 </html>

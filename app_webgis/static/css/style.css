@@ -401,3 +401,102 @@ body {
     border-color: #2563EB;
     background: #EFF6FF;
 }
+
+/* ==========================================================================
+   Dark Mode Overrides (Theme Switcher System)
+   ========================================================================== */
+[data-bs-theme="dark"] {
+    --bg-slate: #0b0f19;
+    --bg-surface: #1e293b;
+    --text-main: #f8fafc;
+    --text-muted: #94a3b8;
+    --border-light: #334155;
+}
+
+[data-bs-theme="dark"] body {
+    background-color: #0b0f19 !important;
+    color: #f8fafc !important;
+}
+
+[data-bs-theme="dark"] .card {
+    background-color: #1e293b !important;
+    border-color: #334155 !important;
+    color: #f8fafc !important;
+}
+
+[data-bs-theme="dark"] .card-header.bg-white,
+[data-bs-theme="dark"] .card-header.bg-light {
+    background-color: #1e293b !important;
+    color: #f8fafc !important;
+    border-bottom-color: #334155 !important;
+}
+
+[data-bs-theme="dark"] .bg-light,
+[data-bs-theme="dark"] .bg-secondary-subtle {
+    background-color: #0f172a !important;
+    color: #f8fafc !important;
+}
+
+[data-bs-theme="dark"] .text-dark {
+    color: #f8fafc !important;
+}
+
+[data-bs-theme="dark"] .text-muted {
+    color: #94a3b8 !important;
+}
+
+[data-bs-theme="dark"] .modal-content {
+    background-color: #1e293b !important;
+    color: #f8fafc !important;
+    border-color: #334155 !important;
+}
+
+[data-bs-theme="dark"] .modal-footer.bg-light {
+    background-color: #0f172a !important;
+    border-top-color: #334155 !important;
+}
+
+[data-bs-theme="dark"] .table {
+    color: #f8fafc !important;
+    --bs-table-bg: transparent;
+}
+
+[data-bs-theme="dark"] .table-striped > tbody > tr:nth-of-type(odd) > * {
+    background-color: rgba(255, 255, 255, 0.04) !important;
+    color: #f8fafc !important;
+}
+
+[data-bs-theme="dark"] .form-control,
+[data-bs-theme="dark"] .form-select {
+    background-color: #0f172a !important;
+    color: #f8fafc !important;
+    border-color: #334155 !important;
+}
+
+[data-bs-theme="dark"] .form-control:focus,
+[data-bs-theme="dark"] .form-select:focus {
+    border-color: #38bdf8 !important;
+    box-shadow: 0 0 0 0.25rem rgba(56, 189, 248, 0.25) !important;
+}
+
+[data-bs-theme="dark"] .leaflet-popup-content-wrapper {
+    background-color: #1e293b !important;
+    color: #f8fafc !important;
+    border: 1px solid #334155 !important;
+}
+
+[data-bs-theme="dark"] .leaflet-popup-tip {
+    background-color: #1e293b !important;
+}
+
+[data-bs-theme="dark"] .dropzone-box {
+    background-color: #0f172a !important;
+    border-color: #334155 !important;
+    color: #cbd5e1 !important;
+}
+
+[data-bs-theme="dark"] .dropzone-box:hover {
+    border-color: #38bdf8 !important;
+    background-color: #1e293b !important;
+}
+
