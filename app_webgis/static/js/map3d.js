@@ -1,5 +1,7 @@
 /**
  * MOVMASSA WebGIS - Visualizador 3D de Terreno e Ocorrências (MapLibre GL 3D)
+ * Fix: terrain must be set via map.setTerrain() after load, not in the style object.
+ * raster-dem source with terrarium encoding is added via addSource() on load.
  */
 document.addEventListener("DOMContentLoaded", function () {
     let map3d = null;
@@ -14,7 +16,7 @@ document.addEventListener("DOMContentLoaded", function () {
         } else {
             setTimeout(() => {
                 map3d.resize();
-            }, 200);
+            }, 300);
         }
     });
 
@@ -22,22 +24,38 @@ document.addEventListener("DOMContentLoaded", function () {
         const container = document.getElementById("cesiumContainer");
         if (!container) return;
 
+        // Check if MapLibre GL is available
+        if (typeof maplibregl === 'undefined') {
+            container.innerHTML = `
+                <div class="d-flex flex-column align-items-center justify-content-center h-100 text-white p-4 text-center" style="background:#0f172a;">
+                    <i class="bi bi-exclamation-triangle-fill text-warning fs-1 mb-3"></i>
+                    <h5 class="fw-bold">MapLibre GL não carregou</h5>
+                    <p class="text-muted small mb-0">Verifique sua conexão com a internet e recarregue a página.</p>
+                </div>
+            `;
+            return;
+        }
+
         try {
-            // Estilo do Mapa 3D: Satélite Esri + Terreno 3D Terrarium (Elevação de Relevo)
+            // Show loading indicator
+            container.innerHTML = `
+                <div class="d-flex flex-column align-items-center justify-content-center h-100 text-white" style="background:#0f172a;">
+                    <div class="spinner-border text-info mb-3" role="status"></div>
+                    <p class="fw-semibold">Carregando mapa 3D...</p>
+                </div>
+            `;
+
+            // Minimal style: only satellite raster tiles. Terrain DEM added after load.
             const mapStyle = {
                 version: 8,
                 sources: {
                     "esri-satellite": {
                         type: "raster",
-                        tiles: ["https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"],
+                        tiles: [
+                            "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+                        ],
                         tileSize: 256,
                         attribution: "Esri World Imagery"
-                    },
-                    "terrain-dem": {
-                        type: "raster-dem",
-                        tiles: ["https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png"],
-                        tileSize: 256,
-                        encoding: "terrarium"
                     }
                 },
                 layers: [
@@ -48,11 +66,7 @@ document.addEventListener("DOMContentLoaded", function () {
                         minzoom: 0,
                         maxzoom: 19
                     }
-                ],
-                terrain: {
-                    source: "terrain-dem",
-                    exaggeration: 1.5
-                }
+                ]
             };
 
             map3d = new maplibregl.Map({
@@ -60,24 +74,56 @@ document.addEventListener("DOMContentLoaded", function () {
                 style: mapStyle,
                 center: [-44.3181, -23.0067], // Angra dos Reis
                 zoom: 13,
-                pitch: 60, // Inclinação 3D de 60 graus
-                bearing: 25, // Rotação inicial 3D
+                pitch: 60,
+                bearing: 25,
                 maxPitch: 85,
                 antialias: true
             });
 
-            // Adicionar controles de navegação 3D (Bússola e Zoom)
+            // Navigation controls
             map3d.addControl(new maplibregl.NavigationControl({
                 visualizePitch: true,
                 showZoom: true,
                 showCompass: true
             }), 'top-left');
 
+            // Scale control
+            map3d.addControl(new maplibregl.ScaleControl({ maxWidth: 200 }), 'bottom-right');
+
             map3d.on('load', function () {
+                console.log('[MOVMASSA 3D] Map loaded successfully');
+
+                // Add DEM terrain source AFTER map load
+                try {
+                    map3d.addSource('terrain-dem', {
+                        type: 'raster-dem',
+                        tiles: [
+                            'https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'
+                        ],
+                        tileSize: 256,
+                        encoding: 'terrarium'
+                    });
+
+                    // Enable 3D terrain with exaggeration
+                    map3d.setTerrain({
+                        source: 'terrain-dem',
+                        exaggeration: 1.5
+                    });
+
+                    console.log('[MOVMASSA 3D] 3D terrain enabled');
+                } catch (terrainErr) {
+                    console.warn('[MOVMASSA 3D] Terrain setup failed (map still works flat):', terrainErr);
+                }
+
+                // Load occurrence markers
                 load3DOccurrences();
             });
 
-            // Configurar botões de ação do Modal 3D
+            map3d.on('error', function (e) {
+                console.error('[MOVMASSA 3D] Map error:', e);
+            });
+
+            // Setup modal action buttons
             const btnFlyTo = document.getElementById("btn3DFlyToAngra");
             if (btnFlyTo) btnFlyTo.onclick = flyToAngra;
 
@@ -153,7 +199,7 @@ document.addEventListener("DOMContentLoaded", function () {
     function load3DOccurrences() {
         if (!map3d) return;
 
-        // Limpar marcadores anteriores
+        // Clear previous markers
         markers3D.forEach(m => m.remove());
         markers3D = [];
 
@@ -161,9 +207,17 @@ document.addEventListener("DOMContentLoaded", function () {
         if (statusSpan) statusSpan.style.display = "inline-block";
 
         fetch("/api/occurrences")
-            .then(res => res.json())
+            .then(res => {
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                return res.json();
+            })
             .then(geoJsonData => {
-                if (!geoJsonData || !geoJsonData.features) return;
+                if (!geoJsonData || !geoJsonData.features) {
+                    console.warn('[MOVMASSA 3D] No features in response');
+                    return;
+                }
+
+                console.log('[MOVMASSA 3D] Loaded', geoJsonData.features.length, 'occurrences');
 
                 geoJsonData.features.forEach(feat => {
                     const coords = feat.geometry ? feat.geometry.coordinates : null;
@@ -230,7 +284,7 @@ document.addEventListener("DOMContentLoaded", function () {
                     markers3D.push(marker);
                 });
             })
-            .catch(err => console.error("Erro ao carregar pontos 3D:", err))
+            .catch(err => console.error("[MOVMASSA 3D] Erro ao carregar pontos:", err))
             .finally(() => {
                 if (statusSpan) statusSpan.style.display = "none";
             });
