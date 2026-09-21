@@ -9,6 +9,11 @@ document.addEventListener("DOMContentLoaded", function() {
         attribution: '&copy; Google Satellite'
     });
 
+    var darkMatter = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+        maxZoom: 19,
+        attribution: '&copy; OpenStreetMap &copy; CARTO'
+    });
+
     var cartoPositron = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
         maxZoom: 19,
         attribution: '&copy; OpenStreetMap &copy; CARTO'
@@ -27,15 +32,61 @@ document.addEventListener("DOMContentLoaded", function() {
     // Adiciona o Google Satélite como padrão
     googleSat.addTo(map);
 
+    var baseMapLayers = {
+        'googleSat': googleSat,
+        'darkMatter': darkMatter,
+        'cartoPositron': cartoPositron,
+        'osm': osm,
+        'esri': esriSatellite
+    };
+
+    var currentBasemap = googleSat;
+
+    // Conectar botões de vidro dos Mapas de Fundo (Basemaps)
+    var basemapBtns = document.querySelectorAll('.basemap-glass-btn');
+    basemapBtns.forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            var selectedKey = this.getAttribute('data-basemap');
+            var newLayer = baseMapLayers[selectedKey];
+            if (newLayer && newLayer !== currentBasemap) {
+                map.removeLayer(currentBasemap);
+                newLayer.addTo(map);
+                currentBasemap = newLayer;
+
+                basemapBtns.forEach(function(b) { b.classList.remove('active'); });
+                this.classList.add('active');
+            }
+        });
+    });
+
+    // Botão de Recolher/Expandir Barra Lateral Flutuante (Glassmorphism)
+    var btnToggleSidebar = document.getElementById('btnToggleGisSidebar');
+    var gisSidebar = document.getElementById('gisSidebar');
+    var iconToggleSidebar = document.getElementById('iconToggleSidebar');
+
+    if (btnToggleSidebar && gisSidebar) {
+        btnToggleSidebar.addEventListener('click', function() {
+            gisSidebar.classList.toggle('collapsed');
+            btnToggleSidebar.classList.toggle('sidebar-collapsed');
+            if (gisSidebar.classList.contains('collapsed')) {
+                if (iconToggleSidebar) iconToggleSidebar.className = 'bi bi-chevron-right fs-5';
+            } else {
+                if (iconToggleSidebar) iconToggleSidebar.className = 'bi bi-chevron-left fs-5';
+            }
+            setTimeout(function() { map.invalidateSize(); }, 350);
+        });
+    }
+
     var baseMaps = {
-        "Google Satellite (Satelite HD)": googleSat,
+        "Google Satellite (HD)": googleSat,
+        "Carto Dark Matter (Escuro)": darkMatter,
         "Carto Positron (Claro)": cartoPositron,
         "OpenStreetMap (Ruas)": osm,
         "Esri Satellite": esriSatellite
     };
 
     var overlayMaps = {};
-    var layerControl = L.control.layers(baseMaps, overlayMaps, { collapsed: false }).addTo(map);
+    var layerControl = L.control.layers(baseMaps, overlayMaps, { collapsed: true, position: 'topright' }).addTo(map);
 
     function getRandomColor() {
         var colors = ['#2563EB', '#0D9488', '#D97706', '#7C3AED', '#DB2777', '#059669', '#4F46E5'];
@@ -126,20 +177,20 @@ document.addEventListener("DOMContentLoaded", function() {
 
             // Item especial: Camada de Pontos da Curadoria (Opcional por demanda)
             const curadoriaDiv = document.createElement('div');
-            curadoriaDiv.className = 'form-check mb-2 p-2 rounded bg-primary-subtle border border-primary border-opacity-25 shadow-sm';
+            curadoriaDiv.className = 'gis-layer-item curadoria-item';
+            
+            const curadoriaLabel = document.createElement('label');
+            curadoriaLabel.className = 'form-check-label mb-0 cursor-pointer d-flex align-items-center gap-2';
+            curadoriaLabel.htmlFor = 'layer_curadoria_demand';
+            curadoriaLabel.innerHTML = `<div><strong class="text-white" style="font-size:12px;">Deslizamentos (Curadoria)</strong><br><small class="text-info fw-semibold" style="font-size:10px;">Ocorrências Oficiais (Pinos Azuis)</small></div>`;
             
             const curadoriaInput = document.createElement('input');
-            curadoriaInput.className = 'form-check-input ms-1';
+            curadoriaInput.className = 'form-check-input ms-2';
             curadoriaInput.type = 'checkbox';
             curadoriaInput.id = 'layer_curadoria_demand';
             
-            const curadoriaLabel = document.createElement('label');
-            curadoriaLabel.className = 'form-check-label ms-2';
-            curadoriaLabel.htmlFor = 'layer_curadoria_demand';
-            curadoriaLabel.innerHTML = `<strong>Pontos de Deslizamento (Curadoria)</strong><br><small class="text-primary fw-semibold">Ocorrências Validadas (Pinos Azuis)</small>`;
-            
-            curadoriaDiv.appendChild(curadoriaInput);
             curadoriaDiv.appendChild(curadoriaLabel);
+            curadoriaDiv.appendChild(curadoriaInput);
             layerListDiv.appendChild(curadoriaDiv);
 
             let curadoriaClusterGroup = null;
@@ -372,22 +423,20 @@ document.addEventListener("DOMContentLoaded", function() {
 
                 if (layerListDiv) {
                     const div = document.createElement('div');
-                    div.className = 'form-check mb-2 p-2 rounded bg-light border border-light shadow-sm';
+                    div.className = 'gis-layer-item';
+                    
+                    const label = document.createElement('label');
+                    label.className = 'form-check-label mb-0 cursor-pointer';
+                    label.htmlFor = 'layer_' + layerData.id;
+                    label.innerHTML = `<div><strong class="text-white" style="font-size:11.5px;">${layerData.name}</strong><br><small class="text-white-50" style="font-size:10px;">${layerData.category}</small></div>`;
                     
                     const input = document.createElement('input');
-                    input.className = 'form-check-input ms-1';
+                    input.className = 'form-check-input ms-2';
                     input.type = 'checkbox';
                     input.id = 'layer_' + layerData.id;
                     
-                    const label = document.createElement('label');
-                    label.className = 'form-check-label ms-2';
-                    label.htmlFor = 'layer_' + layerData.id;
-                    
-                    // Exibe APENAS o nome da camada e sua categoria embaixo (sem rótulos extras)
-                    label.innerHTML = `<strong>${layerData.name}</strong><br><small class="text-muted">${layerData.category}</small>`;
-                    
-                    div.appendChild(input);
                     div.appendChild(label);
+                    div.appendChild(input);
                     layerListDiv.appendChild(div);
 
                     let geojsonLayer = null;

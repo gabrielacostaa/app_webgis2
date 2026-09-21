@@ -42,17 +42,330 @@ body {
 
 /* Glassmorphism & Surface Utility Classes */
 .glass-panel {
-    background: rgba(255, 255, 255, 0.92) !important;
-    backdrop-filter: blur(16px) saturate(180%);
-    -webkit-backdrop-filter: blur(16px) saturate(180%);
+    background: rgba(255, 255, 255, 0.85) !important;
+    backdrop-filter: blur(20px) saturate(190%);
+    -webkit-backdrop-filter: blur(20px) saturate(190%);
     border: 1px solid rgba(226, 232, 240, 0.8) !important;
 }
 
 .glass-dark {
-    background: rgba(15, 23, 42, 0.92) !important;
-    backdrop-filter: blur(16px) saturate(180%);
-    -webkit-backdrop-filter: blur(16px) saturate(180%);
-    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+    background: rgba(15, 23, 42, 0.82) !important;
+    backdrop-filter: blur(24px) saturate(190%);
+    -webkit-backdrop-filter: blur(24px) saturate(190%);
+    border: 1px solid rgba(255, 255, 255, 0.15) !important;
+}
+
+/* ==========================================================================
+   AMBIENTAL PRO / MOVMASSA PRO - Frosted Glass GIS Floating Sidebar System
+   ========================================================================== */
+.gis-viewport-wrapper {
+    position: relative;
+    width: 100%;
+    height: calc(100vh - 100px);
+    min-height: 600px;
+    border-radius: 20px;
+    overflow: hidden;
+    box-shadow: 0 16px 40px -8px rgba(15, 23, 42, 0.35);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.gis-glass-sidebar {
+    position: absolute;
+    top: 16px;
+    left: 16px;
+    bottom: 16px;
+    width: 360px;
+    max-width: calc(100% - 32px);
+    z-index: 1000;
+    background: rgba(15, 23, 42, 0.82);
+    backdrop-filter: blur(24px) saturate(190%);
+    -webkit-backdrop-filter: blur(24px) saturate(190%);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5), 0 0 1px rgba(255, 255, 255, 0.3);
+    border-radius: 22px;
+    color: #F8FAFC;
+    transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease;
+    overflow-y: auto;
+    overflow-x: hidden;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 14px;
+}
+
+.gis-glass-sidebar.collapsed {
+    transform: translateX(calc(-100% - 24px));
+    pointer-events: none;
+}
+
+.btn-gis-sidebar-toggle {
+    position: absolute;
+    top: 24px;
+    left: 390px;
+    z-index: 1001;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: rgba(15, 23, 42, 0.88);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    color: #38BDF8;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+    cursor: pointer;
+    transition: left 0.35s cubic-bezier(0.4, 0, 0.2, 1), transform 0.2s ease, background 0.2s ease, color 0.2s ease;
+}
+
+.btn-gis-sidebar-toggle:hover {
+    background: rgba(30, 41, 59, 0.95);
+    color: #FFFFFF;
+    transform: scale(1.08);
+}
+
+.btn-gis-sidebar-toggle.sidebar-collapsed {
+    left: 24px;
+}
+
+/* Glass Brand Banner */
+.glass-brand-card {
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.2) 0%, rgba(6, 182, 212, 0.15) 100%);
+    border: 1px solid rgba(52, 211, 153, 0.35);
+    border-radius: 16px;
+    padding: 12px 14px;
+    box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.2);
+}
+
+.glass-brand-title {
+    font-size: 1.15rem;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    color: #FFFFFF;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.glass-brand-badge {
+    background: rgba(16, 185, 129, 0.3);
+    color: #34D399;
+    border: 1px solid rgba(52, 211, 153, 0.5);
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    padding: 3px 8px;
+    border-radius: 9999px;
+    text-transform: uppercase;
+}
+
+/* Glass Section Container */
+.glass-section {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 16px;
+    padding: 12px;
+    box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.05);
+}
+
+.glass-section-title {
+    font-size: 0.7rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #94A3B8;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+}
+
+/* Glass Layer Items */
+.gis-layer-item {
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 12px;
+    padding: 9px 12px;
+    margin-bottom: 8px;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    color: #F1F5F9;
+}
+
+.gis-layer-item:hover {
+    background: rgba(255, 255, 255, 0.09);
+    border-color: rgba(255, 255, 255, 0.22);
+    transform: translateX(2px);
+}
+
+.gis-layer-item.curadoria-item {
+    background: rgba(37, 99, 235, 0.18);
+    border: 1px solid rgba(59, 130, 246, 0.4);
+}
+
+.gis-layer-item.curadoria-item:hover {
+    background: rgba(37, 99, 235, 0.28);
+    border-color: rgba(96, 165, 250, 0.6);
+}
+
+/* Glass Form Controls inside Sidebar */
+.gis-glass-sidebar .form-control,
+.gis-glass-sidebar .form-select {
+    background: rgba(15, 23, 42, 0.6) !important;
+    border: 1px solid rgba(255, 255, 255, 0.16) !important;
+    color: #F8FAFC !important;
+    border-radius: 10px;
+    font-size: 0.8125rem;
+}
+
+.gis-glass-sidebar .form-control:focus,
+.gis-glass-sidebar .form-select:focus {
+    border-color: #38BDF8 !important;
+    box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.25) !important;
+}
+
+.gis-glass-sidebar .form-label {
+    color: #CBD5E1;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.gis-glass-sidebar .form-check-input {
+    background-color: rgba(255, 255, 255, 0.15);
+    border-color: rgba(255, 255, 255, 0.3);
+    cursor: pointer;
+}
+
+.gis-glass-sidebar .form-check-input:checked {
+    background-color: #10B981;
+    border-color: #10B981;
+    box-shadow: 0 0 10px rgba(16, 185, 129, 0.5);
+}
+
+/* Glass Action Buttons */
+.btn-glass-primary {
+    background: rgba(37, 99, 235, 0.3) !important;
+    border: 1px solid rgba(96, 165, 250, 0.4) !important;
+    color: #FFFFFF !important;
+    border-radius: 10px;
+    backdrop-filter: blur(8px);
+    transition: all 0.2s ease;
+}
+
+.btn-glass-primary:hover {
+    background: rgba(37, 99, 235, 0.6) !important;
+    border-color: rgba(147, 197, 253, 0.7) !important;
+    box-shadow: 0 0 16px rgba(59, 130, 246, 0.4);
+    transform: translateY(-1px);
+}
+
+.btn-glass-success {
+    background: rgba(16, 185, 129, 0.25) !important;
+    border: 1px solid rgba(52, 211, 153, 0.45) !important;
+    color: #FFFFFF !important;
+    border-radius: 10px;
+    backdrop-filter: blur(8px);
+    transition: all 0.2s ease;
+}
+
+.btn-glass-success:hover {
+    background: rgba(16, 185, 129, 0.45) !important;
+    border-color: rgba(110, 231, 183, 0.7) !important;
+    box-shadow: 0 0 16px rgba(16, 185, 129, 0.4);
+    transform: translateY(-1px);
+}
+
+.btn-glass-emerald {
+    background: rgba(5, 150, 105, 0.25) !important;
+    border: 1px solid rgba(16, 185, 129, 0.45) !important;
+    color: #FFFFFF !important;
+    border-radius: 10px;
+    backdrop-filter: blur(8px);
+    transition: all 0.2s ease;
+}
+
+.btn-glass-emerald:hover {
+    background: rgba(5, 150, 105, 0.45) !important;
+    border-color: rgba(52, 211, 153, 0.7) !important;
+    box-shadow: 0 0 16px rgba(5, 150, 105, 0.4);
+    transform: translateY(-1px);
+}
+
+/* Basemap Glass Selector Pills */
+.basemap-glass-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 6px;
+}
+
+.basemap-glass-btn {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    padding: 7px 10px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #CBD5E1;
+    cursor: pointer;
+    text-align: left;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.2s ease;
+}
+
+.basemap-glass-btn:hover {
+    background: rgba(255, 255, 255, 0.12);
+    border-color: rgba(255, 255, 255, 0.25);
+    color: #FFFFFF;
+}
+
+.basemap-glass-btn.active {
+    background: rgba(14, 165, 233, 0.25);
+    border-color: rgba(56, 189, 248, 0.6);
+    color: #38BDF8;
+    box-shadow: 0 0 12px rgba(14, 165, 233, 0.35);
+}
+
+/* Leaflet UI Glassmorphism Overrides */
+.leaflet-bar {
+    border: none !important;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4) !important;
+}
+
+.leaflet-bar a {
+    background: rgba(15, 23, 42, 0.85) !important;
+    backdrop-filter: blur(16px) !important;
+    -webkit-backdrop-filter: blur(16px) !important;
+    color: #F8FAFC !important;
+    border-color: rgba(255, 255, 255, 0.18) !important;
+}
+
+.leaflet-bar a:hover {
+    background: rgba(30, 41, 59, 0.95) !important;
+    color: #38BDF8 !important;
+}
+
+.leaflet-control-layers {
+    background: rgba(15, 23, 42, 0.85) !important;
+    backdrop-filter: blur(16px) !important;
+    -webkit-backdrop-filter: blur(16px) !important;
+    border: 1px solid rgba(255, 255, 255, 0.18) !important;
+    border-radius: 14px !important;
+    color: #F8FAFC !important;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45) !important;
+}
+
+.leaflet-control-scale-line {
+    background: rgba(15, 23, 42, 0.75) !important;
+    backdrop-filter: blur(8px) !important;
+    border-color: rgba(255, 255, 255, 0.3) !important;
+    color: #F8FAFC !important;
+    font-weight: 700 !important;
+    font-size: 10px !important;
 }
 
 .bg-dark-slate {

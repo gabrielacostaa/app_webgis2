@@ -1,99 +1,129 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="row g-3">
-    <!-- Sidebar: Controle de Camadas e Ações Rápidas -->
-    <div class="col-lg-3">
+<div class="gis-viewport-wrapper position-relative">
+    <!-- MAPA FULL VIEWPORT -->
+    <div id="map" style="width: 100%; height: 100%;"></div>
 
-        <!-- Card: Controle de Camadas -->
-        <div class="card shadow-sm border-0 rounded-4 mb-3">
-            <div class="card-header bg-dark-slate text-white d-flex justify-content-between align-items-center py-3 px-3">
-                <h6 class="mb-0 fw-bold d-flex align-items-center gap-2">
-                    <i class="bi bi-layers-half text-primary fs-5"></i> Camadas
-                </h6>
-                <span class="badge bg-primary rounded-pill">Angra dos Reis</span>
+    <!-- BOTÃO FLUTUANTE RECOLHER / EXPANDIR SIDEBAR -->
+    <button type="button" id="btnToggleGisSidebar" class="btn-gis-sidebar-toggle shadow-lg" title="Ocultar / Mostrar Ferramentas">
+        <i id="iconToggleSidebar" class="bi bi-chevron-left fs-5"></i>
+    </button>
+
+    <!-- SIDEBAR FLUTUANTE EM VIDRO TRANSLÚCIDO (GLASSMORPHISM ESTILO AMBIENTAL PRO) -->
+    <div id="gisSidebar" class="gis-glass-sidebar">
+        <!-- BANNER DE MARCA -->
+        <div class="glass-brand-card d-flex align-items-center justify-content-between">
+            <div>
+                <div class="glass-brand-title">
+                    <img src="{{ url_for('static', filename='favicon.svg') }}" width="24" height="24" alt="MOVMASSA Logo">
+                    <span>MOVMASSA</span>
+                    <span class="glass-brand-badge">PRO</span>
+                </div>
+                <div class="text-white-50 mt-1" style="font-size: 10.5px;">
+                    <i class="bi bi-geo-alt-fill text-success me-1"></i> GEOPORTAL • Angra dos Reis
+                </div>
             </div>
-            <div class="card-body p-3" id="layer-list" style="max-height: 380px; overflow-y: auto;">
-                <div class="text-center py-4" id="layer-spinner">
-                    <div class="spinner-border text-primary" role="status">
-                        <span class="visually-hidden">Carregando camadas...</span>
-                    </div>
-                    <p class="small text-muted mt-2 mb-0">Carregando acervo territorial...</p>
+            <span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-2.5 py-1" style="font-size: 10px;">
+                <span class="pulse-indicator me-1"></span> Live GIS
+            </span>
+        </div>
+
+        <!-- SEÇÃO: MAPAS DE FUNDO -->
+        <div class="glass-section">
+            <div class="glass-section-title">
+                <span><i class="bi bi-map-fill text-info me-1"></i> MAPAS DE FUNDO</span>
+                <span class="text-muted" style="font-size: 9px;">BASEMAPS</span>
+            </div>
+            <div class="basemap-glass-grid" id="basemapSelectorGrid">
+                <button type="button" class="basemap-glass-btn active" data-basemap="googleSat">
+                    <i class="bi bi-globe-americas text-info"></i> Satélite HD
+                </button>
+                <button type="button" class="basemap-glass-btn" data-basemap="darkMatter">
+                    <i class="bi bi-moon-stars text-warning"></i> Dark Matter
+                </button>
+                <button type="button" class="basemap-glass-btn" data-basemap="cartoPositron">
+                    <i class="bi bi-sun text-light"></i> Positron
+                </button>
+                <button type="button" class="basemap-glass-btn" data-basemap="osm">
+                    <i class="bi bi-signpost-2 text-success"></i> OpenStreet
+                </button>
+            </div>
+        </div>
+
+        <!-- SEÇÃO: CAMADAS OPERACIONAIS -->
+        <div class="glass-section">
+            <div class="glass-section-title">
+                <span><i class="bi bi-layers-half text-warning me-1"></i> CAMADAS OPERACIONAIS</span>
+                <span class="badge bg-primary rounded-pill px-2 py-0.5" style="font-size: 9px;">Acervo</span>
+            </div>
+            <div id="layer-list" style="max-height: 220px; overflow-y: auto; padding-right: 2px;">
+                <div class="text-center py-3" id="layer-spinner">
+                    <div class="spinner-border spinner-border-sm text-info" role="status"></div>
+                    <p class="small text-muted mt-2 mb-0" style="font-size: 11px;">Carregando camadas territoriais...</p>
                 </div>
             </div>
         </div>
 
-        <!-- Card: Enviar Ocorrência e Upload Massivo -->
-        <div class="card shadow-sm border-0 rounded-4 mb-3">
-            <div class="card-header bg-white border-0 py-3 px-3">
-                <h6 class="mb-0 fw-bold text-dark d-flex align-items-center gap-2">
-                    <i class="bi bi-cloud-arrow-up-fill text-success fs-5"></i> Cadastrar e Importar
-                </h6>
+        <!-- SEÇÃO: CADASTRAR & IMPORTAR -->
+        <div class="glass-section">
+            <div class="glass-section-title">
+                <span><i class="bi bi-cloud-arrow-up-fill text-success me-1"></i> CADASTRAR & IMPORTAR</span>
             </div>
-            <div class="card-body p-3 pt-0">
-                <div class="d-grid gap-2">
-                    <button type="button" class="btn btn-outline-primary btn-sm rounded-3 py-2 fw-semibold d-flex align-items-center justify-content-center gap-2" data-bs-toggle="modal" data-bs-target="#modalSinglePoint">
-                        <i class="bi bi-geo-fill"></i> Cadastrar 1 Ocorrência (Ponto)
-                    </button>
+            <div class="d-grid gap-1.5">
+                <button type="button" class="btn btn-glass-primary btn-sm py-1.5 fw-semibold d-flex align-items-center justify-content-center gap-2" data-bs-toggle="modal" data-bs-target="#modalSinglePoint" style="font-size: 11.5px;">
+                    <i class="bi bi-geo-fill text-info"></i> Cadastrar 1 Ponto (Campo)
+                </button>
 
-                    {% if current_user.is_authenticated %}
-                    <button type="button" class="btn btn-success btn-sm rounded-3 py-2 fw-bold text-white d-flex align-items-center justify-content-center gap-2" data-bs-toggle="modal" data-bs-target="#modalBulkShapefile">
-                        <i class="bi bi-file-earmark-zip-fill fs-6"></i> Upload Massivo (Shapefile .zip)
-                    </button>
-                    <button type="button" class="btn btn-emerald btn-sm rounded-3 py-2 fw-bold text-white d-flex align-items-center justify-content-center gap-2" style="background-color: #059669; border-color: #059669;" data-bs-toggle="modal" data-bs-target="#modalBulkCsv">
-                        <i class="bi bi-filetype-csv fs-6"></i> Upload Massivo (Tabela CSV)
-                    </button>
-                    {% endif %}
-                </div>
+                {% if current_user.is_authenticated %}
+                <button type="button" class="btn btn-glass-success btn-sm py-1.5 fw-bold d-flex align-items-center justify-content-center gap-2" data-bs-toggle="modal" data-bs-target="#modalBulkShapefile" style="font-size: 11.5px;">
+                    <i class="bi bi-file-earmark-zip-fill"></i> Upload Massivo (Shapefile .zip)
+                </button>
+                <button type="button" class="btn btn-glass-emerald btn-sm py-1.5 fw-bold d-flex align-items-center justify-content-center gap-2" data-bs-toggle="modal" data-bs-target="#modalBulkCsv" style="font-size: 11.5px;">
+                    <i class="bi bi-filetype-csv"></i> Upload Massivo (CSV)
+                </button>
+                {% endif %}
             </div>
         </div>
 
-        <!-- Card: Exportação Espacial GIS -->
-        <div class="card shadow-sm border-0 rounded-4 mb-3">
-            <div class="card-header bg-white border-0 py-3 px-3">
-                <h6 class="mb-0 fw-bold text-dark d-flex align-items-center gap-2">
-                    <i class="bi bi-download text-indigo fs-5"></i> Download Spatial (QGIS/ArcGIS)
-                </h6>
+        <!-- SEÇÃO: EXPORTAÇÃO ESPACIAL -->
+        <div class="glass-section">
+            <div class="glass-section-title">
+                <span><i class="bi bi-download text-primary me-1"></i> DOWNLOAD SPATIAL</span>
+                <span class="badge bg-secondary-subtle text-light rounded-pill" style="font-size: 9px;">QGIS / ArcGIS</span>
             </div>
-            <div class="card-body p-3 pt-0">
-                <form action="{{ url_for('download_export') }}" method="GET">
-                    <div class="mb-2">
-                        <label class="form-label small fw-semibold">Camada ou Ocorrências</label>
-                        <select name="layer_type" class="form-select form-select-sm rounded-3">
-                            <option value="occurrences" selected>Pontos de Deslizamento Registrados (Curadoria)</option>
-                            {% for l in layers %}
-                            <option value="{{ l.id }}">{{ l.name }} ({{ l.category }})</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                    <div class="mb-2">
-                        <label class="form-label small fw-semibold">Filtrar Município</label>
-                        <select name="municipio" class="form-select form-select-sm rounded-3">
-                            <option value="Todos">Todos os Municípios</option>
+            <form action="{{ url_for('download_export') }}" method="GET">
+                <div class="mb-1.5">
+                    <label class="form-label mb-1">Camada ou Ocorrências</label>
+                    <select name="layer_type" class="form-select form-select-sm">
+                        <option value="occurrences" selected>Pontos de Deslizamento (Curadoria)</option>
+                        {% for l in layers %}
+                        <option value="{{ l.id }}">{{ l.name }} ({{ l.category }})</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="row g-1 mb-2">
+                    <div class="col-6">
+                        <label class="form-label mb-1">Município</label>
+                        <select name="municipio" class="form-select form-select-sm">
                             <option value="Angra dos Reis" selected>Angra dos Reis</option>
+                            <option value="Todos">Todos</option>
                             <option value="Paraty">Paraty</option>
                             <option value="Mangaratiba">Mangaratiba</option>
                         </select>
                     </div>
-                    <div class="mb-3">
-                        <label class="form-label small fw-semibold">Formato do Arquivo</label>
-                        <select name="format" class="form-select form-select-sm rounded-3">
+                    <div class="col-6">
+                        <label class="form-label mb-1">Formato</label>
+                        <select name="format" class="form-select form-select-sm">
                             <option value="shapefile">Shapefile (.zip)</option>
                             <option value="geopackage">GeoPackage (.gpkg)</option>
                             <option value="geojson">GeoJSON (.geojson)</option>
                         </select>
                     </div>
-                    <button type="submit" class="btn btn-primary btn-sm rounded-3 w-100 fw-bold">
-                        <i class="bi bi-file-earmark-arrow-down me-1"></i> Baixar Arquivo Espacial
-                    </button>
-                </form>
-            </div>
-        </div>
-    </div>
-
-    <!-- Container do Mapa -->
-    <div class="col-lg-9">
-        <div class="card shadow-sm border-0 rounded-4 overflow-hidden position-relative" style="height: calc(100vh - 120px);">
-            <div id="map" style="width: 100%; height: 100%;"></div>
+                </div>
+                <button type="submit" class="btn btn-primary btn-sm rounded-3 w-100 fw-bold d-flex align-items-center justify-content-center gap-1 py-1.5 shadow-sm" style="font-size: 11.5px;">
+                    <i class="bi bi-file-earmark-arrow-down fs-6"></i> Baixar Arquivo Espacial
+                </button>
+            </form>
         </div>
     </div>
 </div>
