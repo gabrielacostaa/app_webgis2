@@ -1260,10 +1260,6 @@ def occurrence_pdf(point_id):
 @app.route('/curadoria')
 @login_required
 def curadoria():
-    if current_user.role not in ['admin', 'org']:
-        flash('Acesso negado. Apenas curadores podem acessar esta seção.', 'danger')
-        return redirect(url_for('index'))
-        
     conn = get_db_connection()
     rows = conn.execute('''
         SELECT s.*, u.username, u.role_level as u_role_level
@@ -1293,12 +1289,33 @@ def curadoria():
 @app.route('/curadoria/update/<int:sub_id>', methods=['POST'])
 @login_required
 def curadoria_update(sub_id):
-    if current_user.role not in ['admin', 'org']:
+    conn = get_db_connection()
+    sub = conn.execute('''
+        SELECT s.*, u.role_level as u_role_level 
+        FROM submissions s 
+        JOIN users u ON s.user_id = u.id 
+        WHERE s.id = ?
+    ''', (sub_id,)).fetchone()
+    
+    if not sub:
+        conn.close()
+        return jsonify({'error': 'Submission not found'}), 404
+
+    is_admin_geral = (current_user.role_level == 'admin_geral')
+    is_gestor = (current_user.role in ['admin', 'org'] or getattr(current_user, 'funcao', 'agente') in ['gestor', 'gestor_agente'])
+    is_owner = (current_user.id == sub['user_id'])
+    
+    sub_sphere = sub['responsavel_nivel'] or sub['u_role_level'] or ''
+    u_sphere = (current_user.role_level or '').replace('agente_', 'admin_')
+    s_sphere = sub_sphere.replace('agente_', 'admin_')
+    is_same_sphere = (u_sphere == s_sphere)
+
+    can_edit = is_admin_geral or (is_gestor and is_same_sphere) or is_owner
+    if not can_edit:
+        conn.close()
         return jsonify({'error': 'Unauthorized'}), 403
         
     f = request.form
-    
-    conn = get_db_connection()
     conn.execute('''
         UPDATE submissions SET 
             title = ?, description = ?, data_evento = ?, tipologia = ?, 
@@ -1413,18 +1430,33 @@ def curadoria_update(sub_id):
 @app.route('/curadoria/action/<int:sub_id>', methods=['POST'])
 @login_required
 def curadoria_action(sub_id):
-    if current_user.role not in ['admin', 'org']:
-        return jsonify({'error': 'Unauthorized'}), 403
-        
     action = request.form.get('action')
     feedback = request.form.get('feedback', '')
     
     conn = get_db_connection()
-    submission = conn.execute('SELECT * FROM submissions WHERE id = ?', (sub_id,)).fetchone()
+    submission = conn.execute('''
+        SELECT s.*, u.role_level as u_role_level 
+        FROM submissions s 
+        JOIN users u ON s.user_id = u.id 
+        WHERE s.id = ?
+    ''', (sub_id,)).fetchone()
     
     if not submission:
         conn.close()
         return jsonify({'error': 'Submission not found'}), 404
+
+    is_admin_geral = (current_user.role_level == 'admin_geral')
+    is_gestor = (current_user.role in ['admin', 'org'] or getattr(current_user, 'funcao', 'agente') in ['gestor', 'gestor_agente'])
+    
+    sub_sphere = submission['responsavel_nivel'] or submission['u_role_level'] or ''
+    u_sphere = (current_user.role_level or '').replace('agente_', 'admin_')
+    s_sphere = sub_sphere.replace('agente_', 'admin_')
+    is_same_sphere = (u_sphere == s_sphere)
+
+    can_approve = is_admin_geral or (is_gestor and is_same_sphere)
+    if not can_approve:
+        conn.close()
+        return jsonify({'error': 'Unauthorized: Apenas gestores podem aprovar ou rejeitar submissões.'}), 403
         
     if action == 'approve':
         conn.execute('''
@@ -1463,58 +1495,118 @@ def curadoria_action(sub_id):
 @app.route('/curadoria/approve_all', methods=['POST'])
 @login_required
 def curadoria_approve_all():
-    if current_user.role not in ['admin', 'org']:
-        flash('Acesso negado. Apenas curadores podem realizar esta ação.', 'danger')
+    is_admin_geral = (current_user.role_level == 'admin_geral')
+    is_gestor = (current_user.role in ['admin', 'org'] or getattr(current_user, 'funcao', 'agente') in ['gestor', 'gestor_agente'])
+    if not (is_admin_geral or is_gestor):
+        flash('Acesso negado. Apenas gestores podem realizar esta ação.', 'danger')
         return redirect(url_for('curadoria'))
 
     conn = get_db_connection()
+    u_sphere = (current_user.role_level or '').replace('agente_', 'admin_')
 
-    # Adiciona camadas pendentes a tabela de layers
-    pending_layers = conn.execute("SELECT * FROM submissions WHERE status = 'pendente' AND submission_type = 'layer'").fetchall()
-    for layer_sub in pending_layers:
-        conn.execute('INSERT INTO layers (name, filename, category, is_active) VALUES (?, ?, ?, 1)',
-                     (layer_sub['title'], layer_sub['filename'], 'Contribuição de Usuários'))
+    if is_admin_geral:
+        pending_layers = conn.execute("SELECT * FROM submissions WHERE status = 'pendente' AND submission_type = 'layer'").fetchall()
+        for layer_sub in pending_layers:
+            conn.execute('INSERT INTO layers (name, filename, category, is_active) VALUES (?, ?, ?, 1)',
+                         (layer_sub['title'], layer_sub['filename'], 'Contribuição de Usuários'))
 
-    conn.execute('''
-        UPDATE submissions 
-        SET status = 'aprovado', origem = 'Curadoria',
-            responsavel_nome = COALESCE(responsavel_nome, ?),
-            responsavel_cpf = COALESCE(responsavel_cpf, ?),
-            responsavel_matricula = COALESCE(responsavel_matricula, ?),
-            responsavel_nivel = COALESCE(responsavel_nivel, ?)
-        WHERE status = 'pendente'
-    ''', (
-        current_user.nome_completo or current_user.username,
-        current_user.cpf or 'N/A',
-        current_user.matricula or 'N/A',
-        current_user.role_level or current_user.role
-    ))
+        conn.execute('''
+            UPDATE submissions 
+            SET status = 'aprovado', origem = 'Curadoria',
+                responsavel_nome = COALESCE(responsavel_nome, ?),
+                responsavel_cpf = COALESCE(responsavel_cpf, ?),
+                responsavel_matricula = COALESCE(responsavel_matricula, ?),
+                responsavel_nivel = COALESCE(responsavel_nivel, ?)
+            WHERE status = 'pendente'
+        ''', (
+            current_user.nome_completo or current_user.username,
+            current_user.cpf or 'N/A',
+            current_user.matricula or 'N/A',
+            current_user.role_level or current_user.role
+        ))
+    else:
+        sub_ids_to_approve = []
+        rows = conn.execute('''
+            SELECT s.id, s.submission_type, s.title, s.filename, s.responsavel_nivel, u.role_level as u_role_level 
+            FROM submissions s JOIN users u ON s.user_id = u.id 
+            WHERE s.status = 'pendente'
+        ''').fetchall()
+        for r in rows:
+            r_sphere = (r['responsavel_nivel'] or r['u_role_level'] or '').replace('agente_', 'admin_')
+            if r_sphere == u_sphere:
+                sub_ids_to_approve.append(r['id'])
+                if r['submission_type'] == 'layer':
+                    conn.execute('INSERT INTO layers (name, filename, category, is_active) VALUES (?, ?, ?, 1)',
+                                 (r['title'], r['filename'], 'Contribuição de Usuários'))
+        
+        if sub_ids_to_approve:
+            placeholders = ','.join(['?'] * len(sub_ids_to_approve))
+            conn.execute(f'''
+                UPDATE submissions 
+                SET status = 'aprovado', origem = 'Curadoria',
+                    responsavel_nome = COALESCE(responsavel_nome, ?),
+                    responsavel_cpf = COALESCE(responsavel_cpf, ?),
+                    responsavel_matricula = COALESCE(responsavel_matricula, ?),
+                    responsavel_nivel = COALESCE(responsavel_nivel, ?)
+                WHERE id IN ({placeholders})
+            ''', [
+                current_user.nome_completo or current_user.username,
+                current_user.cpf or 'N/A',
+                current_user.matricula or 'N/A',
+                current_user.role_level or current_user.role
+            ] + sub_ids_to_approve)
+
     conn.commit()
     conn.close()
 
-    flash('Todos os pontos e submissões pendentes foram aprovados com sucesso!', 'success')
+    flash('Submissões pendentes aprovadas com sucesso!', 'success')
     return redirect(url_for('curadoria'))
 
 @app.route('/curadoria/delete_all', methods=['POST'])
 @login_required
 def curadoria_delete_all():
-    if current_user.role not in ['admin', 'org']:
-        flash('Acesso negado. Apenas curadores podem realizar esta ação.', 'danger')
+    is_admin_geral = (current_user.role_level == 'admin_geral')
+    is_gestor = (current_user.role in ['admin', 'org'] or getattr(current_user, 'funcao', 'agente') in ['gestor', 'gestor_agente'])
+    if not (is_admin_geral or is_gestor):
+        flash('Acesso negado. Apenas gestores podem realizar esta ação.', 'danger')
         return redirect(url_for('curadoria'))
 
     conn = get_db_connection()
-    conn.execute("DELETE FROM submissions WHERE submission_type = 'point'")
+    if is_admin_geral:
+        conn.execute("DELETE FROM submissions WHERE submission_type = 'point'")
+    else:
+        u_sphere = (current_user.role_level or '').replace('agente_', 'admin_')
+        sub_ids_to_delete = []
+        rows = conn.execute('''
+            SELECT s.id, s.responsavel_nivel, u.role_level as u_role_level 
+            FROM submissions s JOIN users u ON s.user_id = u.id 
+            WHERE s.submission_type = 'point'
+        ''').fetchall()
+        for r in rows:
+            r_sphere = (r['responsavel_nivel'] or r['u_role_level'] or '').replace('agente_', 'admin_')
+            if r_sphere == u_sphere:
+                sub_ids_to_delete.append(r['id'])
+        
+        if sub_ids_to_delete:
+            placeholders = ','.join(['?'] * len(sub_ids_to_delete))
+            conn.execute(f"DELETE FROM submissions WHERE id IN ({placeholders})", sub_ids_to_delete)
+
     conn.commit()
     conn.close()
 
-    flash('Todos os pontos de ocorrência da Curadoria foram excluídos com sucesso.', 'warning')
+    flash('Pontos de ocorrência da Curadoria excluídos com sucesso.', 'warning')
     return redirect(url_for('curadoria'))
 
 @app.route('/delete_occurrence/<int:sub_id>', methods=['POST'])
 @login_required
 def delete_occurrence(sub_id):
     conn = get_db_connection()
-    sub = conn.execute('SELECT * FROM submissions WHERE id = ?', (sub_id,)).fetchone()
+    sub = conn.execute('''
+        SELECT s.*, u.role_level as u_role_level 
+        FROM submissions s 
+        JOIN users u ON s.user_id = u.id 
+        WHERE s.id = ?
+    ''', (sub_id,)).fetchone()
     
     if not sub:
         conn.close()
@@ -1522,12 +1614,19 @@ def delete_occurrence(sub_id):
         return redirect(url_for('index'))
 
     is_admin_geral = (current_user.role_level == 'admin_geral')
-    is_owner = (current_user.id == sub['user_id'])
+    is_gestor = (current_user.role in ['admin', 'org'] or getattr(current_user, 'funcao', 'agente') in ['gestor', 'gestor_agente'])
+    
+    sub_sphere = sub['responsavel_nivel'] or sub['u_role_level'] or ''
+    u_sphere = (current_user.role_level or '').replace('agente_', 'admin_')
+    s_sphere = sub_sphere.replace('agente_', 'admin_')
+    is_same_sphere = (u_sphere == s_sphere)
 
-    if not (is_admin_geral or is_owner):
+    can_delete = is_admin_geral or (is_gestor and is_same_sphere)
+
+    if not can_delete:
         conn.close()
-        flash('Acesso Negado: Apenas o Administrador Geral ou o próprio usuário responsável pelo cadastro podem excluir esta ocorrência.', 'danger')
-        return redirect(url_for('index'))
+        flash('Acesso Negado: Apenas o Administrador Geral ou os Gestores da respectiva esfera podem excluir ocorrências.', 'danger')
+        return redirect(request.referrer or url_for('index'))
 
     conn.execute('DELETE FROM submissions WHERE id = ?', (sub_id,))
     conn.commit()

@@ -34,7 +34,7 @@
                         <i class="bi bi-geo-fill"></i> Cadastrar 1 Ocorrência (Ponto)
                     </button>
 
-                    {% if current_user.role in ['admin', 'org'] %}
+                    {% if current_user.is_authenticated %}
                     <button type="button" class="btn btn-success btn-sm rounded-3 py-2 fw-bold text-white d-flex align-items-center justify-content-center gap-2" data-bs-toggle="modal" data-bs-target="#modalBulkShapefile">
                         <i class="bi bi-file-earmark-zip-fill fs-6"></i> Upload Massivo (Shapefile .zip)
                     </button>
@@ -149,7 +149,7 @@
     </div>
 </div>
 
-{% if current_user.role in ['admin', 'org'] %}
+{% if current_user.is_authenticated %}
 <!-- MODAL: Upload Massivo em Shapefile (.zip) -->
 <div class="modal fade" id="modalBulkShapefile" tabindex="-1">
     <div class="modal-dialog modal-dialog-centered">

@@ -40,14 +40,12 @@
                                 <i class="bi bi-map me-1"></i> Geoportal
                             </a>
                         </li>
-                        {% if current_user.role in ['admin', 'org'] or 'admin' in current_user.role_level %}
-                            <li class="nav-item">
-                                <a class="nav-link px-3 py-2 rounded-2 {% if request.endpoint == 'curadoria' %}active bg-primary text-white{% endif %}" href="{{ url_for('curadoria') }}">
-                                    <i class="bi bi-shield-check me-1"></i> Curadoria Técnica
-                                </a>
-                            </li>
-                        {% endif %}
-                        {% if current_user.role in ['admin', 'org'] and ('admin' in current_user.role_level or current_user.role_level in ['admin_geral', 'org']) %}
+                        <li class="nav-item">
+                            <a class="nav-link px-3 py-2 rounded-2 {% if request.endpoint == 'curadoria' %}active bg-primary text-white{% endif %}" href="{{ url_for('curadoria') }}">
+                                <i class="bi bi-shield-check me-1"></i> Curadoria Técnica
+                            </a>
+                        </li>
+                        {% if current_user.role_level == 'admin_geral' or current_user.role in ['admin', 'org'] or current_user.funcao in ['gestor', 'gestor_agente'] %}
                             <li class="nav-item">
                                 <a class="nav-link px-3 py-2 rounded-2 {% if request.endpoint == 'admin' %}active bg-primary text-white{% endif %}" href="{{ url_for('admin') }}">
                                     <i class="bi bi-people me-1"></i> Usuários Defesa Civil

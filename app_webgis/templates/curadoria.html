@@ -12,6 +12,9 @@
                     <p class="text-light opacity-75 small mb-0">Avaliação, validação técnica, exportação e gerenciamento de ocorrências registradas em Angra dos Reis</p>
                 </div>
                 <div class="d-flex gap-2 flex-wrap">
+                    {% set is_admin_geral = (current_user.role_level == 'admin_geral') %}
+                    {% set is_gestor = (current_user.role in ['admin', 'org'] or current_user.funcao in ['gestor', 'gestor_agente']) %}
+                    {% if is_admin_geral or is_gestor %}
                     <form action="{{ url_for('curadoria_approve_all') }}" method="POST" class="d-inline" onsubmit="return confirm('Deseja realmente APROVAR TODOS os pontos e submissões pendentes da Curadoria?');">
                         <button type="submit" class="btn btn-primary rounded-pill px-3 py-2 fw-bold d-flex align-items-center gap-2 shadow-sm">
                             <i class="bi bi-check-all fs-5"></i> Aprovar Todos Pendentes
@@ -22,6 +25,7 @@
                             <i class="bi bi-trash3-fill"></i> Excluir Todos os Pontos
                         </button>
                     </form>
+                    {% endif %}
                     <button type="button" class="btn btn-success rounded-pill px-3 py-2 fw-bold d-flex align-items-center gap-2 shadow-sm" data-bs-toggle="modal" data-bs-target="#modalBulkShapefileCuradoria">
                         <i class="bi bi-file-earmark-zip-fill"></i> Upload Massivo (Shapefile .zip)
                     </button>
@@ -59,10 +63,16 @@
                         <tbody>
                             {% for sub in submissions %}
                             {% set is_admin_geral = (current_user.role_level == 'admin_geral') %}
+                            {% set is_gestor = (current_user.role in ['admin', 'org'] or current_user.funcao in ['gestor', 'gestor_agente']) %}
                             {% set is_owner = (current_user.id == sub.user_id) %}
-                            {% set sub_sphere = sub.responsavel_nivel or sub.u_role_level %}
-                            {% set is_same_sphere = (current_user.role_level == sub_sphere) %}
-                            {% set can_manage = is_admin_geral or is_owner or is_same_sphere %}
+                            {% set sub_sphere = sub.responsavel_nivel or sub.u_role_level or '' %}
+                            {% set current_sphere = current_user.role_level.replace('agente_', 'admin_') if current_user.role_level else '' %}
+                            {% set target_sphere = sub_sphere.replace('agente_', 'admin_') if sub_sphere else '' %}
+                            {% set is_same_sphere = (current_sphere == target_sphere) %}
+
+                            {% set can_edit = is_admin_geral or (is_gestor and is_same_sphere) or is_owner %}
+                            {% set can_approve = is_admin_geral or (is_gestor and is_same_sphere) %}
+                            {% set can_delete = is_admin_geral or (is_gestor and is_same_sphere) %}
 
                             <tr>
                                 <td class="ps-4">
@@ -77,6 +87,9 @@
                                             'admin_nacional': 'Defesa Civil Nacional',
                                             'admin_estadual': 'Defesa Civil Estadual',
                                             'admin_municipal': 'Defesa Civil Municipal',
+                                            'agente_nacional': 'Defesa Civil Nacional',
+                                            'agente_estadual': 'Defesa Civil Estadual',
+                                            'agente_municipal': 'Defesa Civil Municipal',
                                             'org': 'Organização',
                                             'user': 'Usuário'
                                         }.get(sub_sphere, sub_sphere) %}
@@ -132,34 +145,38 @@
                                         </a>
                                         {% endif %}
 
-                                        {% if can_manage %}
-                                            <!-- Botões Aprovar / Rejeitar -->
-                                            {% if sub.status == 'pendente' %}
-                                            <form action="{{ url_for('curadoria_action', sub_id=sub.id) }}" method="POST" class="d-inline">
-                                                <input type="hidden" name="action" value="approve">
-                                                <button type="submit" class="btn btn-sm btn-success py-1 px-2 rounded-3 fw-semibold">Aprovar</button>
-                                            </form>
-                                            <form action="{{ url_for('curadoria_action', sub_id=sub.id) }}" method="POST" class="d-inline">
-                                                <input type="hidden" name="action" value="reject">
-                                                <button type="submit" class="btn btn-sm btn-outline-danger py-1 px-2 rounded-3 fw-semibold">Rejeitar</button>
-                                            </form>
-                                            {% endif %}
+                                        <!-- Botões Aprovar / Rejeitar -->
+                                        {% if sub.status == 'pendente' and can_approve %}
+                                        <form action="{{ url_for('curadoria_action', sub_id=sub.id) }}" method="POST" class="d-inline">
+                                            <input type="hidden" name="action" value="approve">
+                                            <button type="submit" class="btn btn-sm btn-success py-1 px-2 rounded-3 fw-semibold">Aprovar</button>
+                                        </form>
+                                        <form action="{{ url_for('curadoria_action', sub_id=sub.id) }}" method="POST" class="d-inline">
+                                            <input type="hidden" name="action" value="reject">
+                                            <button type="submit" class="btn btn-sm btn-outline-danger py-1 px-2 rounded-3 fw-semibold">Rejeitar</button>
+                                        </form>
+                                        {% endif %}
 
-                                            <!-- Editar Atributos -->
-                                            <button type="button" class="btn btn-sm btn-warning text-dark py-1 px-2 rounded-3 fw-semibold" data-bs-toggle="modal" data-bs-target="#editModal_{{ sub.id }}" title="Editar Dicionário de Dados">
-                                                <i class="bi bi-pencil-square"></i>
-                                            </button>
+                                        <!-- Editar Atributos -->
+                                        {% if can_edit %}
+                                        <button type="button" class="btn btn-sm btn-warning text-dark py-1 px-2 rounded-3 fw-semibold" data-bs-toggle="modal" data-bs-target="#editModal_{{ sub.id }}" title="Editar Dicionário de Dados">
+                                            <i class="bi bi-pencil-square"></i>
+                                        </button>
+                                        {% endif %}
 
-                                            <!-- Botão Excluir -->
-                                            <form action="{{ url_for('delete_occurrence', sub_id=sub.id) }}" method="POST" class="d-inline" onsubmit="return confirm('Deseja realmente excluir este ponto/submissão do sistema? Esta ação é permanente.');">
-                                                <button type="submit" class="btn btn-sm btn-outline-danger py-1 px-2 rounded-3" title="Excluir do sistema">
-                                                    <i class="bi bi-trash"></i>
-                                                </button>
-                                            </form>
-                                        {% else %}
-                                            <button type="button" class="btn btn-sm btn-outline-secondary py-1 px-2 rounded-3 opacity-50" disabled title="Apenas o Administrador Geral ou gestores da {{ level_label }} podem gerenciar este ponto.">
-                                                <i class="bi bi-lock-fill"></i>
+                                        <!-- Botão Excluir -->
+                                        {% if can_delete %}
+                                        <form action="{{ url_for('delete_occurrence', sub_id=sub.id) }}" method="POST" class="d-inline" onsubmit="return confirm('Deseja realmente excluir este ponto/submissão do sistema? Esta ação é permanente.');">
+                                            <button type="submit" class="btn btn-sm btn-outline-danger py-1 px-2 rounded-3" title="Excluir do sistema">
+                                                <i class="bi bi-trash"></i>
                                             </button>
+                                        </form>
+                                        {% endif %}
+
+                                        {% if not can_edit and not can_approve and not can_delete %}
+                                        <button type="button" class="btn btn-sm btn-outline-secondary py-1 px-2 rounded-3 opacity-50" disabled title="Sem permissão para alterar este registro.">
+                                            <i class="bi bi-lock-fill"></i>
+                                        </button>
                                         {% endif %}
                                     </div>
 
