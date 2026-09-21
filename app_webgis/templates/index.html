@@ -120,13 +120,17 @@
                         <input type="text" name="title" class="form-control form-control-sm rounded-3" placeholder="Ex: Deslizamento Morro do Carmo" required>
                     </div>
                     <div class="row">
-                        <div class="col-6 mb-3">
+                        <div class="col-12 mb-2">
                             <label class="form-label fw-semibold small">Data do Evento</label>
                             <input type="date" name="data_evento" class="form-control form-control-sm rounded-3">
                         </div>
                         <div class="col-6 mb-3">
-                            <label class="form-label fw-semibold small">Mídia (Foto ou Vídeo)</label>
-                            <input type="file" name="media_file" class="form-control form-control-sm rounded-3" accept="image/*,video/*">
+                            <label class="form-label fw-semibold small">📸 Fotos (Até 5 fotos)</label>
+                            <input type="file" name="photos" class="form-control form-control-sm rounded-3" accept="image/*" multiple>
+                        </div>
+                        <div class="col-6 mb-3">
+                            <label class="form-label fw-semibold small">🎥 Vídeos (Até 2 vídeos)</label>
+                            <input type="file" name="videos" class="form-control form-control-sm rounded-3" accept="video/*" multiple>
                         </div>
                     </div>
                     <div class="mb-3">

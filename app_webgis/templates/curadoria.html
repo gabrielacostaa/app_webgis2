@@ -165,7 +165,7 @@
                                     <div class="modal fade text-start" id="editModal_{{ sub.id }}" tabindex="-1">
                                       <div class="modal-dialog modal-lg modal-dialog-scrollable">
                                         <div class="modal-content rounded-4 border-0 shadow-lg">
-                                          <form action="{{ url_for('curadoria_update', sub_id=sub.id) }}" method="POST">
+                                          <form action="{{ url_for('curadoria_update', sub_id=sub.id) }}" method="POST" enctype="multipart/form-data">
                                               <div class="modal-header bg-dark-slate text-white p-3">
                                                 <h5 class="modal-title fs-6 fw-bold"><i class="bi bi-pencil-square me-2 text-warning"></i> Editar Dicionário de Dados #{{ sub.id }} - {{ sub.title }}</h5>
                                                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
@@ -180,7 +180,7 @@
                                                     <li class="nav-item"><button class="nav-link py-1 px-2 small" id="t-ant-{{ sub.id }}" data-bs-toggle="tab" data-bs-target="#ant-{{ sub.id }}" type="button">🚜 Antrópico</button></li>
                                                     <li class="nav-item"><button class="nav-link py-1 px-2 small" id="t-econ-{{ sub.id }}" data-bs-toggle="tab" data-bs-target="#econ-{{ sub.id }}" type="button">💰 Econômico</button></li>
                                                     <li class="nav-item"><button class="nav-link py-1 px-2 small" id="t-soc-{{ sub.id }}" data-bs-toggle="tab" data-bs-target="#soc-{{ sub.id }}" type="button">👥 Social/Amb</button></li>
-                                                    <li class="nav-item"><button class="nav-link py-1 px-2 small" id="t-mid-{{ sub.id }}" data-bs-toggle="tab" data-bs-target="#mid-{{ sub.id }}" type="button">📹 Mídia</button></li>
+                                                    <li class="nav-item"><button class="nav-link py-1 px-2 small" id="t-mid-{{ sub.id }}" data-bs-toggle="tab" data-bs-target="#midia-{{ sub.id }}" type="button">📹 Mídia</button></li>
                                                 </ul>
                                                 
                                                 <div class="tab-content" id="dictTabsContent_{{ sub.id }}">
@@ -266,10 +266,50 @@
 
                                                     <!-- Tab Mídia -->
                                                     <div class="tab-pane fade" id="midia-{{ sub.id }}">
-                                                        <div class="row g-2">
-                                                            <div class="col-md-6"><label class="form-label small fw-bold">Tipo de Mídia</label><input type="text" name="midia_tipo" class="form-control form-control-sm rounded-3" value="{{ sub.midia_tipo or '' }}"></div>
-                                                            <div class="col-md-6"><label class="form-label small fw-bold">Fonte / Fonte do Registro</label><input type="text" name="midia_fonte" class="form-control form-control-sm rounded-3" value="{{ sub.midia_fonte or '' }}"></div>
-                                                            <div class="col-md-12"><label class="form-label small fw-bold">URL da Mídia Externa</label><input type="text" name="midia_url" class="form-control form-control-sm rounded-3" value="{{ sub.midia_url or '' }}"></div>
+                                                        <div class="row g-3">
+                                                            <div class="col-md-6">
+                                                                <label class="form-label small fw-bold">📸 Upload de Fotos do Evento (Até 5 fotos)</label>
+                                                                <input type="file" name="photos" class="form-control form-control-sm rounded-3" accept="image/*" multiple>
+                                                                <div class="form-text text-muted" style="font-size: 10px;">Selecione até 5 fotos (.jpg, .png, .webp).</div>
+                                                            </div>
+                                                            <div class="col-md-6">
+                                                                <label class="form-label small fw-bold">🎥 Upload de Vídeos do Evento (Até 2 vídeos)</label>
+                                                                <input type="file" name="videos" class="form-control form-control-sm rounded-3" accept="video/*" multiple>
+                                                                <div class="form-text text-muted" style="font-size: 10px;">Selecione até 2 vídeos (.mp4, .mov, .webm).</div>
+                                                            </div>
+                                                            <div class="col-md-4">
+                                                                <label class="form-label small fw-bold">Tipo de Mídia</label>
+                                                                <input type="text" name="midia_tipo" class="form-control form-control-sm rounded-3" value="{{ sub.midia_tipo or '' }}" placeholder="Ex: Vistoria de Campo">
+                                                            </div>
+                                                            <div class="col-md-4">
+                                                                <label class="form-label small fw-bold">Fonte / Origem do Registro</label>
+                                                                <input type="text" name="midia_fonte" class="form-control form-control-sm rounded-3" value="{{ sub.midia_fonte or '' }}" placeholder="Ex: Defesa Civil">
+                                                            </div>
+                                                            <div class="col-md-4">
+                                                                <label class="form-label small fw-bold">URL de Mídia Externa</label>
+                                                                <input type="text" name="midia_url" class="form-control form-control-sm rounded-3" value="{{ sub.midia_url or '' }}" placeholder="https://...">
+                                                            </div>
+
+                                                            {% if sub.media_files_list %}
+                                                            <div class="col-12 mt-2">
+                                                                <label class="form-label small fw-bold text-primary">📁 Mídias Anexadas a este Registro ({{ sub.media_files_list | length }}):</label>
+                                                                <div class="d-flex flex-wrap gap-2">
+                                                                    {% for mfile in sub.media_files_list %}
+                                                                        {% set m_low = mfile.lower() %}
+                                                                        <div class="border rounded-3 p-1 position-relative bg-light text-center shadow-sm" style="width: 100px;">
+                                                                            {% if m_low.endswith('.mp4') or m_low.endswith('.mov') or m_low.endswith('.webm') %}
+                                                                                <video width="100%" height="65" class="rounded" src="{{ url_for('serve_layer', filename=mfile) }}"></video>
+                                                                                <span class="badge bg-danger rounded-pill mt-1" style="font-size: 8px;">Vídeo</span>
+                                                                            {% else %}
+                                                                                <img src="{{ url_for('serve_layer', filename=mfile) }}" width="100%" height="65" class="rounded object-fit-cover">
+                                                                                <span class="badge bg-primary rounded-pill mt-1" style="font-size: 8px;">Foto</span>
+                                                                            {% endif %}
+                                                                            <a href="{{ url_for('serve_layer', filename=mfile) }}" target="_blank" class="btn btn-sm btn-dark rounded-circle position-absolute top-0 end-0 m-1 p-0 d-flex align-items-center justify-content-center" style="width:18px; height:18px;" title="Ver mídia"><i class="bi bi-arrows-fullscreen" style="font-size:9px;"></i></a>
+                                                                        </div>
+                                                                    {% endfor %}
+                                                                </div>
+                                                            </div>
+                                                            {% endif %}
                                                         </div>
                                                     </div>
                                                 </div>

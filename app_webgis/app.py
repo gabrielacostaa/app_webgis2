@@ -412,6 +412,7 @@ def upgrade_db():
         ('midia_tipo', 'TEXT'),
         ('midia_fonte', 'TEXT'),
         ('midia_url', 'TEXT'),
+        ('media_files_json', 'TEXT'),
         
         # Responsável & Origem
         ('origem', 'TEXT DEFAULT "Curadoria"'),
@@ -616,23 +617,48 @@ def upload_point():
     role_lvl = (current_user.role_level or current_user.role) if current_user.is_authenticated else 'Visitante'
     matricula = (current_user.matricula if current_user.is_authenticated else 'N/A')
 
+    import json, time
+    media_list = []
+    
     file = request.files.get('media_file')
-    media_filename = None
     if file and file.filename != '':
         filename = secure_filename(file.filename)
-        import time
-        media_filename = f"media_{int(time.time())}_{filename}"
-        file.save(os.path.join(app.config['UPLOAD_FOLDER'], media_filename))
+        m_filename = f"media_{int(time.time())}_{filename}"
+        file.save(os.path.join(app.config['UPLOAD_FOLDER'], m_filename))
+        media_list.append(m_filename)
+
+    photos = request.files.getlist('photos')
+    photo_count = 0
+    for p_file in photos:
+        if p_file and p_file.filename != '' and photo_count < 5:
+            fname = secure_filename(p_file.filename)
+            saved_name = f"photo_{user_id}_{int(time.time())}_{fname}"
+            p_file.save(os.path.join(app.config['UPLOAD_FOLDER'], saved_name))
+            media_list.append(saved_name)
+            photo_count += 1
+
+    videos = request.files.getlist('videos')
+    video_count = 0
+    for v_file in videos:
+        if v_file and v_file.filename != '' and video_count < 2:
+            fname = secure_filename(v_file.filename)
+            saved_name = f"video_{user_id}_{int(time.time())}_{fname}"
+            v_file.save(os.path.join(app.config['UPLOAD_FOLDER'], saved_name))
+            media_list.append(saved_name)
+            video_count += 1
+
+    media_json_str = json.dumps(media_list) if media_list else None
+    media_filename = media_list[0] if media_list else None
         
     conn = get_db_connection()
     conn.execute('''
         INSERT INTO submissions (
-            user_id, title, description, submission_type, lat, lng, media_filename, filename, data_evento, municipio, uf,
+            user_id, title, description, submission_type, lat, lng, media_filename, media_files_json, filename, data_evento, municipio, uf,
             origem, responsavel_nome, responsavel_cpf, responsavel_matricula, responsavel_nivel
         ) 
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ''', (
-        user_id, title, description, 'point', lat, lng, media_filename, '', data_evento, 'Angra dos Reis', 'RJ',
+        user_id, title, description, 'point', lat, lng, media_filename, media_json_str, '', data_evento, 'Angra dos Reis', 'RJ',
         'Curadoria',
         responsavel_nome,
         responsavel_cpf,
@@ -922,11 +948,21 @@ def get_occurrences():
     conn = get_db_connection()
     points = conn.execute("SELECT * FROM submissions WHERE submission_type = 'point' AND status = 'aprovado'").fetchall()
     conn.close()
-    
     features = []
     for p in points:
         p_dict = dict(p)
-        media_url = url_for('serve_layer', filename=p['media_filename']) if p['media_filename'] else p_dict.get('midia_url')
+        import json
+        m_list = []
+        if p_dict.get('media_files_json'):
+            try:
+                m_list = json.loads(p_dict['media_files_json'])
+            except Exception:
+                m_list = []
+        if p['media_filename'] and p['media_filename'] not in m_list:
+            m_list.insert(0, p['media_filename'])
+
+        media_urls = [url_for('serve_layer', filename=fn) for fn in m_list if fn]
+        primary_media_url = media_urls[0] if media_urls else (p_dict.get('midia_url') or '')
         
         can_delete = current_user.is_authenticated and (current_user.role_level == 'admin_geral' or current_user.id == p['user_id'])
         
@@ -1031,7 +1067,8 @@ def get_occurrences():
             
             "midia_tipo": p_dict.get('midia_tipo'),
             "midia_fonte": p_dict.get('midia_fonte'),
-            "media_url": media_url,
+            "media_url": primary_media_url,
+            "media_urls": media_urls,
             "media_filename": p['media_filename']
         }
         
@@ -1083,13 +1120,28 @@ def curadoria():
         return redirect(url_for('index'))
         
     conn = get_db_connection()
-    submissions = conn.execute('''
+    rows = conn.execute('''
         SELECT s.*, u.username, u.role_level as u_role_level
         FROM submissions s 
         JOIN users u ON s.user_id = u.id 
         ORDER BY s.timestamp DESC
     ''').fetchall()
     conn.close()
+
+    import json
+    submissions = []
+    for r in rows:
+        r_dict = dict(r)
+        m_list = []
+        if r_dict.get('media_files_json'):
+            try:
+                m_list = json.loads(r_dict['media_files_json'])
+            except Exception:
+                m_list = []
+        if r_dict.get('media_filename') and r_dict['media_filename'] not in m_list:
+            m_list.insert(0, r_dict['media_filename'])
+        r_dict['media_files_list'] = m_list
+        submissions.append(r_dict)
     
     return render_template('curadoria.html', submissions=submissions)
 
@@ -1163,6 +1215,50 @@ def curadoria_update(sub_id):
         
         sub_id
     ))
+
+    # Processa múltiplos uploads de Fotos (até 5) e Vídeos (até 2)
+    photos = request.files.getlist('photos')
+    videos = request.files.getlist('videos')
+
+    import json, time
+    existing_sub = conn.execute('SELECT media_files_json, media_filename FROM submissions WHERE id = ?', (sub_id,)).fetchone()
+    current_media = []
+    if existing_sub:
+        ex_dict = dict(existing_sub)
+        if ex_dict.get('media_files_json'):
+            try:
+                current_media = json.loads(ex_dict['media_files_json'])
+            except Exception:
+                current_media = []
+        if ex_dict.get('media_filename') and ex_dict['media_filename'] not in current_media:
+            current_media.insert(0, ex_dict['media_filename'])
+
+    photo_count = sum(1 for f in current_media if any(str(f).lower().endswith(ext) for ext in ['.jpg', '.jpeg', '.png', '.gif', '.webp']))
+    video_count = sum(1 for f in current_media if any(str(f).lower().endswith(ext) for ext in ['.mp4', '.mov', '.webm', '.avi', '.mkv']))
+
+    for p_file in photos:
+        if p_file and p_file.filename != '' and photo_count < 5:
+            fname = secure_filename(p_file.filename)
+            saved_name = f"photo_{sub_id}_{int(time.time())}_{fname}"
+            p_file.save(os.path.join(app.config['UPLOAD_FOLDER'], saved_name))
+            current_media.append(saved_name)
+            photo_count += 1
+
+    for v_file in videos:
+        if v_file and v_file.filename != '' and video_count < 2:
+            fname = secure_filename(v_file.filename)
+            saved_name = f"video_{sub_id}_{int(time.time())}_{fname}"
+            v_file.save(os.path.join(app.config['UPLOAD_FOLDER'], saved_name))
+            current_media.append(saved_name)
+            video_count += 1
+
+    media_json_str = json.dumps(current_media) if current_media else None
+    first_file = current_media[0] if current_media else ''
+
+    conn.execute('''
+        UPDATE submissions SET media_files_json = ?, media_filename = COALESCE(NULLIF(media_filename, ''), ?) WHERE id = ?
+    ''', (media_json_str, first_file, sub_id))
+
     conn.commit()
     conn.close()
     
