@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0F172A"/>
+      <stop offset="100%" stop-color="#1E3A8A"/>
+    </linearGradient>
+    <linearGradient id="mountainGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#06B6D4"/>
+      <stop offset="100%" stop-color="#059669"/>
+    </linearGradient>
+    <linearGradient id="pinGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#F59E0B"/>
+      <stop offset="100%" stop-color="#EF4444"/>
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="12" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <!-- Background Card -->
+  <rect width="512" height="512" rx="128" fill="url(#bgGrad)"/>
+  
+  <!-- Subtle Grid Lines -->
+  <path d="M 64,128 H 448 M 64,256 H 448 M 64,384 H 448 M 128,64 V 448 M 256,64 V 448 M 384,64 V 448" stroke="#334155" stroke-width="4" stroke-dasharray="8 8" opacity="0.4"/>
+
+  <!-- Mountain / Slope Contours (Encosta) -->
+  <path d="M 64,416 L 192,260 L 288,340 L 448,180 L 448,416 Z" fill="url(#mountainGrad)" opacity="0.85"/>
+  <path d="M 64,416 L 220,310 L 320,380 L 448,270 L 448,416 Z" fill="#10B981" opacity="0.6"/>
+
+  <!-- Contour lines -->
+  <path d="M 90,390 Q 180,320 260,360 T 420,290" stroke="#E0F2FE" stroke-width="6" fill="none" opacity="0.8"/>
+  <path d="M 120,340 Q 200,280 290,310 T 430,220" stroke="#BAE6FD" stroke-width="5" fill="none" opacity="0.6"/>
+
+  <!-- Location Pin with Glow -->
+  <g filter="url(#glow)">
+    <path d="M 256,112 C 203,112 160,155 160,208 C 160,280 256,384 256,384 C 256,384 352,280 352,208 C 352,155 309,112 256,112 Z" fill="url(#pinGrad)"/>
+    <circle cx="256" cy="200" r="36" fill="#FFFFFF"/>
+    <circle cx="256" cy="200" r="20" fill="#0F172A"/>
+  </g>
+</svg>
