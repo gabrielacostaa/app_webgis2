@@ -434,56 +434,153 @@ def index():
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
-        username = request.form['username'].strip()
-        password = request.form['password'].strip()
+        username = request.form.get('username', '').strip()
+        password = request.form.get('password', '').strip()
+        uname_low = username.lower()
+        
+        BASE_ACCOUNTS = {
+            'admin': {
+                'username': 'admin',
+                'passwords': ['Admin@123', 'admin123', 'admin'],
+                'role': 'admin',
+                'role_level': 'admin_geral',
+                'email': 'admin.geral@geoportal.gov.br',
+                'nome_completo': 'Administrador Geral MOVMASSA',
+                'telefone': '(24) 99999-0000',
+                'matricula': 'ADM-GERAL-001',
+                'cpf': '000.000.000-00'
+            },
+            'defesa_nacional': {
+                'username': 'defesa_nacional',
+                'passwords': ['Defesa@123', 'defesa123', 'defesa'],
+                'role': 'admin',
+                'role_level': 'admin_nacional',
+                'email': 'nacional@defesacivil.gov.br',
+                'nome_completo': 'Agente Defesa Civil Nacional',
+                'telefone': '(61) 3333-1000',
+                'matricula': 'GOV-DCN-2026',
+                'cpf': '111.111.111-11'
+            },
+            'defesa_estadual': {
+                'username': 'defesa_estadual',
+                'passwords': ['Defesa@123', 'defesa123', 'defesa'],
+                'role': 'admin',
+                'role_level': 'admin_estadual',
+                'email': 'estadual@defesacivil.rj.gov.br',
+                'nome_completo': 'Agente Defesa Civil Estadual RJ',
+                'telefone': '(21) 2222-2000',
+                'matricula': 'EST-DCE-2026',
+                'cpf': '222.222.222-22'
+            },
+            'defesa_municipal': {
+                'username': 'defesa_municipal',
+                'passwords': ['Defesa@123', 'defesa123', 'defesa'],
+                'role': 'admin',
+                'role_level': 'admin_municipal',
+                'email': 'defesacivil@angra.rj.gov.br',
+                'nome_completo': 'Agente Defesa Civil Municipal Angra',
+                'telefone': '(24) 3365-3000',
+                'matricula': 'MUN-DCM-2026',
+                'cpf': '333.333.333-33'
+            },
+            'org': {
+                'username': 'org',
+                'passwords': ['Org@123', 'org123', 'org'],
+                'role': 'org',
+                'role_level': 'org',
+                'email': 'contato@orgamb.org.br',
+                'nome_completo': 'Organização Técnica Ambientalista',
+                'telefone': '(24) 98888-4000',
+                'matricula': 'ORG-ANG-2026',
+                'cpf': '444.444.444-44'
+            },
+            'user': {
+                'username': 'user',
+                'passwords': ['User@123', 'user123', 'user'],
+                'role': 'user',
+                'role_level': 'user',
+                'email': 'usuario@email.com',
+                'nome_completo': 'Usuário Comum de Campo',
+                'telefone': '(24) 97777-5000',
+                'matricula': 'N/A',
+                'cpf': '555.555.555-55'
+            }
+        }
         
         conn = get_db_connection()
-        user = conn.execute('SELECT * FROM users WHERE LOWER(username) = LOWER(?)', (username,)).fetchone()
-        conn.close()
+        user_row = conn.execute('SELECT * FROM users WHERE LOWER(username) = LOWER(?)', (username,)).fetchone()
+        u_dict = dict(user_row) if user_row else None
         
-        if user:
-            u_dict = dict(user)
+        is_valid = False
+        if u_dict:
             pwd_hash = u_dict.get('password_hash') or u_dict.get('password')
-            
-            is_valid = False
             if pwd_hash:
                 try:
                     is_valid = check_password_hash(pwd_hash, password)
                 except Exception:
                     is_valid = (pwd_hash == password)
-            
-            # Fallback para senhas de contas base se a hash estivesse ausente
-            if not is_valid:
-                uname_low = username.lower()
-                if uname_low == 'user' and password in ['User@123', 'user123', 'user']:
-                    is_valid = True
-                elif uname_low == 'admin' and password in ['Admin@123', 'admin123', 'admin']:
-                    is_valid = True
-                elif uname_low == 'defesa_nacional' and password in ['Defesa@123', 'defesa123', 'defesa']:
-                    is_valid = True
-                elif uname_low == 'defesa_estadual' and password in ['Defesa@123', 'defesa123', 'defesa']:
-                    is_valid = True
-                elif uname_low == 'defesa_municipal' and password in ['Defesa@123', 'defesa123', 'defesa']:
-                    is_valid = True
-                elif uname_low == 'org' and password in ['Org@123', 'org123', 'org']:
-                    is_valid = True
+        
+        # Se nao validou pela hash ou se a conta base nao estava no banco
+        if not is_valid and uname_low in BASE_ACCOUNTS:
+            meta = BASE_ACCOUNTS[uname_low]
+            if password in meta['passwords']:
+                is_valid = True
+                new_hash = generate_password_hash(meta['passwords'][0])
+                if u_dict:
+                    try:
+                        conn.execute('''
+                            UPDATE users SET password_hash = ?, role = ?, role_level = ? WHERE id = ?
+                        ''', (new_hash, meta['role'], meta['role_level'], u_dict['id']))
+                        conn.commit()
+                        u_dict['password_hash'] = new_hash
+                    except Exception as e:
+                        print("Erro ao atualizar hash base:", e)
+                else:
+                    try:
+                        cursor = conn.cursor()
+                        cursor.execute('''
+                            INSERT INTO users (username, password_hash, role, role_level, email, nome_completo, telefone, matricula, cpf)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ''', (
+                            meta['username'], new_hash, meta['role'], meta['role_level'],
+                            meta['email'], meta['nome_completo'], meta['telefone'], meta['matricula'], meta['cpf']
+                        ))
+                        conn.commit()
+                        inserted = conn.execute('SELECT * FROM users WHERE id = ?', (cursor.lastrowid,)).fetchone()
+                        if inserted:
+                            u_dict = dict(inserted)
+                    except Exception as e:
+                        print("Erro ao inserir conta base:", e)
+                        u_dict = {
+                            'id': 990,
+                            'username': meta['username'],
+                            'role': meta['role'],
+                            'role_level': meta['role_level'],
+                            'email': meta['email'],
+                            'nome_completo': meta['nome_completo'],
+                            'telefone': meta['telefone'],
+                            'matricula': meta['matricula'],
+                            'cpf': meta['cpf']
+                        }
+        
+        conn.close()
 
-            if is_valid:
-                user_obj = User(
-                    id=u_dict['id'],
-                    username=u_dict['username'],
-                    role=u_dict['role'],
-                    role_level=u_dict.get('role_level', 'user'),
-                    email=u_dict.get('email', ''),
-                    nome_completo=u_dict.get('nome_completo', ''),
-                    telefone=u_dict.get('telefone', ''),
-                    matricula=u_dict.get('matricula', ''),
-                    cpf=u_dict.get('cpf', '')
-                )
-                login_user(user_obj)
-                flash(f'Bem-vindo, {user_obj.nome_completo or user_obj.username}!', 'success')
-                next_page = request.args.get('next')
-                return redirect(next_page or url_for('index'))
+        if is_valid and u_dict:
+            user_obj = User(
+                id=u_dict['id'],
+                username=u_dict['username'],
+                role=u_dict['role'],
+                role_level=u_dict.get('role_level', 'user'),
+                email=u_dict.get('email', ''),
+                nome_completo=u_dict.get('nome_completo', ''),
+                telefone=u_dict.get('telefone', ''),
+                matricula=u_dict.get('matricula', ''),
+                cpf=u_dict.get('cpf', '')
+            )
+            login_user(user_obj)
+            flash(f'Bem-vindo, {user_obj.nome_completo or user_obj.username}!', 'success')
+            next_page = request.args.get('next')
+            return redirect(next_page or url_for('index'))
 
         flash('Login inválido. Verifique suas credenciais.', 'danger')
             
