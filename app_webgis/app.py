@@ -1730,7 +1730,7 @@ def admin_create_user():
         # 1. Bloqueio de CPF duplicado em qualquer esfera da Defesa Civil
         clean_cpf = cpf.replace('.', '').replace('-', '').replace(' ', '')
         if clean_cpf:
-            users_all = conn.execute('SELECT username, nome_completo, role_level, cpf FROM users WHERE cpf IS NOT NULL AND cpf != ""').fetchall()
+            users_all = conn.execute("SELECT username, nome_completo, role_level, cpf FROM users WHERE cpf IS NOT NULL AND cpf != ''").fetchall()
             for u_item in users_all:
                 u_dict_item = dict(u_item)
                 item_cpf = str(u_dict_item.get('cpf', '')).replace('.', '').replace('-', '').replace(' ', '')
@@ -1748,7 +1748,7 @@ def admin_create_user():
 
         # 2. Bloqueio por E-mail / Username único
         existing_user = conn.execute(
-            'SELECT id FROM users WHERE LOWER(username) = LOWER(?) OR (email IS NOT NULL AND email != "" AND LOWER(email) = LOWER(?))', 
+            "SELECT id FROM users WHERE LOWER(username) = LOWER(?) OR (email IS NOT NULL AND email != '' AND LOWER(email) = LOWER(?))", 
             (username, username)
         ).fetchone()
         
