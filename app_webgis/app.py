@@ -1696,14 +1696,18 @@ def admin():
 @app.route('/admin/create_user', methods=['POST'])
 @login_required
 def admin_create_user():
-    if current_user.role not in ['admin', 'org']:
+    if current_user.role not in ['admin', 'org'] and 'admin' not in getattr(current_user, 'role_level', ''):
         flash('Acesso negado. Apenas administradores e gestores de Defesa Civil podem cadastrar funcionários.', 'danger')
         return redirect(url_for('index'))
         
-    username = request.form.get('username', '').strip()
+    email = request.form.get('email', '').strip().lower()
+    username_input = request.form.get('username', '').strip()
+    
+    # O login de acesso (username) passa a ser automaticamente o e-mail
+    username = email if email else username_input.lower()
+    
     password = request.form.get('password', '').strip()
     nome_completo = request.form.get('nome_completo', '').strip()
-    email = request.form.get('email', '').strip()
     telefone = request.form.get('telefone', '').strip()
     matricula = request.form.get('matricula', '').strip()
     cpf = request.form.get('cpf', '').strip()
@@ -1715,17 +1719,42 @@ def admin_create_user():
 
     role = 'admin' if 'admin' in role_level else ('org' if role_level == 'org' else 'user')
 
-    if not username or not password or not nome_completo:
-        flash('Nome de usuário, senha inicial e nome completo são obrigatórios.', 'warning')
+    if not username or not password or not nome_completo or not cpf:
+        flash('E-mail institucional (Login de acesso), Senha inicial, Nome completo e CPF são obrigatórios.', 'warning')
         return redirect(url_for('admin'))
 
     conn = None
     try:
         conn = get_db_connection()
-        existing = conn.execute('SELECT id FROM users WHERE LOWER(username) = LOWER(?)', (username,)).fetchone()
-        if existing:
+        
+        # 1. Bloqueio de CPF duplicado em qualquer esfera da Defesa Civil
+        clean_cpf = cpf.replace('.', '').replace('-', '').replace(' ', '')
+        if clean_cpf:
+            users_all = conn.execute('SELECT username, nome_completo, role_level, cpf FROM users WHERE cpf IS NOT NULL AND cpf != ""').fetchall()
+            for u_item in users_all:
+                u_dict_item = dict(u_item)
+                item_cpf = str(u_dict_item.get('cpf', '')).replace('.', '').replace('-', '').replace(' ', '')
+                if item_cpf and item_cpf == clean_cpf:
+                    sphere_name = {
+                        'admin_geral': 'Administração Geral',
+                        'admin_nacional': 'Defesa Civil Nacional',
+                        'admin_estadual': 'Defesa Civil Estadual',
+                        'admin_municipal': 'Defesa Civil Municipal',
+                        'org': 'Organização Parceira'
+                    }.get(u_dict_item.get('role_level'), u_dict_item.get('role_level'))
+                    conn.close()
+                    flash(f'Bloqueio por CPF: O CPF "{cpf}" já pertence ao agente "{u_dict_item.get("nome_completo") or u_dict_item.get("username")}" cadastrado na {sphere_name} (Login: {u_dict_item.get("username")}). Não é permitido cadastrar o mesmo CPF em mais de uma esfera.', 'danger')
+                    return redirect(url_for('admin'))
+
+        # 2. Bloqueio por E-mail / Username único
+        existing_user = conn.execute(
+            'SELECT id FROM users WHERE LOWER(username) = LOWER(?) OR (email IS NOT NULL AND email != "" AND LOWER(email) = LOWER(?))', 
+            (username, username)
+        ).fetchone()
+        
+        if existing_user:
             conn.close()
-            flash(f'O usuário "{username}" já existe no sistema. Escolha outro nome de login.', 'danger')
+            flash(f'O e-mail / login "{username}" já está cadastrado no sistema para outro agente. Escolha outro e-mail.', 'danger')
             return redirect(url_for('admin'))
 
         pwd_hash = generate_password_hash(password)
@@ -1745,7 +1774,7 @@ def admin_create_user():
         conn.close()
 
         id_str = f" (ID #{new_id})" if new_id else ""
-        flash(f'Novo agente "{nome_completo}"{id_str} cadastrado com sucesso com o login "{username}"!', 'success')
+        flash(f'Novo agente "{nome_completo}"{id_str} cadastrado com sucesso com o login de e-mail "{username}"!', 'success')
     except Exception as e:
         if conn:
             try:

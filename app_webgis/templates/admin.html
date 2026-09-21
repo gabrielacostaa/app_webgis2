@@ -105,8 +105,9 @@
 
                     <div class="row g-3">
                         <div class="col-md-6">
-                            <label class="form-label fw-bold small">Nome de Usuário (Login de Acesso) <span class="text-danger">*</span></label>
-                            <input type="text" name="username" class="form-control form-control-sm rounded-3" placeholder="Ex: jose.carlos" required>
+                            <label class="form-label fw-bold small">E-mail Institucional (Login de Acesso) <span class="text-danger">*</span></label>
+                            <input type="email" name="email" id="emailInput" class="form-control form-control-sm rounded-3" placeholder="jose.carlos@defesacivil.gov.br" required>
+                            <input type="hidden" name="username" id="usernameHidden">
                         </div>
                         <div class="col-md-6">
                             <label class="form-label fw-bold small">Senha Inicial <span class="text-danger">*</span></label>
@@ -120,19 +121,15 @@
                         </div>
 
                         <div class="col-md-6">
-                            <label class="form-label fw-bold small">CPF do Responsável</label>
-                            <input type="text" name="cpf" class="form-control form-control-sm rounded-3" placeholder="000.000.000-00">
+                            <label class="form-label fw-bold small">CPF do Responsável <span class="text-danger">*</span></label>
+                            <input type="text" name="cpf" class="form-control form-control-sm rounded-3" placeholder="000.000.000-00" required>
                         </div>
                         <div class="col-md-6">
                             <label class="form-label fw-bold small">Matrícula Oficial / Registro</label>
                             <input type="text" name="matricula" class="form-control form-control-sm rounded-3" placeholder="Ex: DCN-2026-088">
                         </div>
 
-                        <div class="col-md-6">
-                            <label class="form-label fw-bold small">E-mail Institucional</label>
-                            <input type="email" name="email" class="form-control form-control-sm rounded-3" placeholder="jose.carlos@defesacivil.gov.br">
-                        </div>
-                        <div class="col-md-6">
+                        <div class="col-md-12">
                             <label class="form-label fw-bold small">Telefone de Contato</label>
                             <input type="text" name="telefone" class="form-control form-control-sm rounded-3" placeholder="(00) 90000-0000">
                         </div>
