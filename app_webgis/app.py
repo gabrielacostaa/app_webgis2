@@ -292,6 +292,14 @@ def upgrade_db():
             conn.rollback()
             print(f"Aviso no seed do usuario {u[0]}:", e)
 
+    if is_pg:
+        try:
+            conn.execute("SELECT setval(pg_get_serial_sequence('users', 'id'), COALESCE((SELECT MAX(id) FROM users), 1));")
+            conn.commit()
+        except Exception as e:
+            conn.rollback()
+            print("Aviso ao sincronizar sequence PostgreSQL de users:", e)
+
     # Seed default GIS layers if empty
     try:
         res = conn.execute('SELECT COUNT(*) FROM layers').fetchone()
@@ -1710,24 +1718,36 @@ def admin_create_user():
         flash('Nome de usuário, senha inicial e nome completo são obrigatórios.', 'warning')
         return redirect(url_for('admin'))
 
-    conn = get_db_connection()
-    existing = conn.execute('SELECT id FROM users WHERE LOWER(username) = LOWER(?)', (username,)).fetchone()
-    if existing:
+    conn = None
+    try:
+        conn = get_db_connection()
+        existing = conn.execute('SELECT id FROM users WHERE LOWER(username) = LOWER(?)', (username,)).fetchone()
+        if existing:
+            conn.close()
+            flash(f'O usuário "{username}" já existe no sistema. Escolha outro nome de login.', 'danger')
+            return redirect(url_for('admin'))
+
+        pwd_hash = generate_password_hash(password)
+        res = conn.execute('''
+            INSERT INTO users (username, password_hash, role, role_level, email, nome_completo, telefone, matricula, cpf)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (username, pwd_hash, role, role_level, email, nome_completo, telefone, matricula, cpf))
+        conn.commit()
+        new_id = getattr(res, 'lastrowid', None)
         conn.close()
-        flash(f'O usuário "{username}" já existe no sistema. Escolha outro nome de login.', 'danger')
-        return redirect(url_for('admin'))
 
-    pwd_hash = generate_password_hash(password)
-    res = conn.execute('''
-        INSERT INTO users (username, password_hash, role, role_level, email, nome_completo, telefone, matricula, cpf)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ''', (username, pwd_hash, role, role_level, email, nome_completo, telefone, matricula, cpf))
-    conn.commit()
-    new_id = getattr(res, 'lastrowid', None)
-    conn.close()
+        id_str = f" (ID #{new_id})" if new_id else ""
+        flash(f'Novo agente "{nome_completo}"{id_str} cadastrado com sucesso com o login "{username}"!', 'success')
+    except Exception as e:
+        if conn:
+            try:
+                conn.rollback()
+                conn.close()
+            except Exception:
+                pass
+        print("Erro ao cadastrar novo agente no banco:", e)
+        flash(f'Erro ao cadastrar novo agente: {e}', 'danger')
 
-    id_str = f" (ID #{new_id})" if new_id else ""
-    flash(f'Novo agente "{nome_completo}"{id_str} cadastrado com sucesso com o login "{username}"!', 'success')
     return redirect(url_for('admin'))
 
 @app.route('/admin/delete_user/<int:user_id>', methods=['POST'])
