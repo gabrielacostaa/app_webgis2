@@ -567,39 +567,32 @@ def login():
                 if u_dict:
                     try:
                         conn.execute('''
-                            UPDATE users SET password_hash = ?, role = ?, role_level = ? WHERE id = ?
-                        ''', (new_hash, meta['role'], meta['role_level'], u_dict['id']))
+                            UPDATE users SET password = ?, password_hash = ?, role = ?, role_level = ? WHERE id = ?
+                        ''', (new_hash, new_hash, meta['role'], meta['role_level'], u_dict['id']))
                         conn.commit()
                         u_dict['password_hash'] = new_hash
                     except Exception as e:
+                        conn.rollback()
                         print("Erro ao atualizar hash base:", e)
                 else:
                     try:
-                        cursor = conn.cursor()
-                        cursor.execute('''
-                            INSERT INTO users (username, password_hash, role, role_level, email, nome_completo, telefone, matricula, cpf)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        conn.execute('''
+                            INSERT INTO users (username, password, password_hash, role, role_level, email, nome_completo, telefone, matricula, cpf)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         ''', (
-                            meta['username'], new_hash, meta['role'], meta['role_level'],
+                            meta['username'], new_hash, new_hash, meta['role'], meta['role_level'],
                             meta['email'], meta['nome_completo'], meta['telefone'], meta['matricula'], meta['cpf']
                         ))
                         conn.commit()
-                        inserted = conn.execute('SELECT * FROM users WHERE id = ?', (cursor.lastrowid,)).fetchone()
+                        inserted = conn.execute('SELECT * FROM users WHERE LOWER(username) = LOWER(?)', (meta['username'],)).fetchone()
                         if inserted:
                             u_dict = dict(inserted)
                     except Exception as e:
+                        conn.rollback()
                         print("Erro ao inserir conta base:", e)
-                        u_dict = {
-                            'id': 990,
-                            'username': meta['username'],
-                            'role': meta['role'],
-                            'role_level': meta['role_level'],
-                            'email': meta['email'],
-                            'nome_completo': meta['nome_completo'],
-                            'telefone': meta['telefone'],
-                            'matricula': meta['matricula'],
-                            'cpf': meta['cpf']
-                        }
+                        inserted = conn.execute('SELECT * FROM users WHERE LOWER(username) = LOWER(?)', (meta['username'],)).fetchone()
+                        if inserted:
+                            u_dict = dict(inserted)
         
         conn.close()
 
