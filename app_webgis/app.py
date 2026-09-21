@@ -128,6 +128,49 @@ def parse_coordinate_value(val):
     except ValueError:
         return None
 
+def utm_to_latlon(easting, northing, zone=23, northern=False):
+    import math
+    a = 6378137.0
+    f = 1 / 298.257223563
+    b = a * (1 - f)
+    e = math.sqrt(1 - (b / a) ** 2)
+    e_prime_sq = (e ** 2) / (1 - e ** 2)
+
+    k0 = 0.9996
+    x = easting - 500000.0
+    y = northing if northern else northing - 10000000.0
+
+    m = y / k0
+    mu = m / (a * (1 - (e ** 2) / 4 - 3 * (e ** 4) / 64 - 5 * (e ** 6) / 256))
+    e1 = (1 - math.sqrt(1 - e ** 2)) / (1 + math.sqrt(1 - e ** 2))
+
+    phi1 = mu + (3 * e1 / 2 - 27 * (e1 ** 3) / 32) * math.sin(2 * mu) + \
+           (21 * (e1 ** 2) / 16 - 55 * (e1 ** 4) / 32) * math.sin(4 * mu) + \
+           (151 * (e1 ** 3) / 96) * math.sin(6 * mu) + \
+           (1097 * (e1 ** 4) / 512) * math.sin(8 * mu)
+
+    n1 = a / math.sqrt(1 - (e * math.sin(phi1)) ** 2)
+    t1 = math.tan(phi1) ** 2
+    c1 = e_prime_sq * (math.cos(phi1) ** 2)
+    r1 = a * (1 - e ** 2) / math.pow(1 - (e * math.sin(phi1)) ** 2, 1.5)
+    d = x / (n1 * k0)
+
+    lat = phi1 - (n1 * t1 / r1) * (
+        (d ** 2) / 2 -
+        (5 + 3 * t1 + 10 * c1 - 4 * (c1 ** 2) - 9 * e_prime_sq) * (d ** 4) / 24 +
+        (61 + 90 * t1 + 298 * c1 + 45 * (t1 ** 2) - 252 * e_prime_sq - 3 * (c1 ** 2)) * (d ** 6) / 720
+    )
+    lat = math.degrees(lat)
+
+    lng_origin = (zone - 1) * 6 - 180 + 3
+    lng = lng_origin + math.degrees((
+        d -
+        (1 + 2 * t1 + c1) * (d ** 3) / 6 +
+        (5 - 2 * c1 + 28 * t1 - 3 * (c1 ** 2) + 8 * e_prime_sq + 24 * (t1 ** 2)) * (d ** 5) / 120
+    ) / math.cos(phi1))
+
+    return lat, lng
+
 def upgrade_db():
     conn = get_db_connection()
     is_pg = getattr(conn, 'is_postgres', False)
@@ -723,45 +766,72 @@ def upload_bulk_csv():
 
         import io
         import csv
-        reader = csv.DictReader(io.StringIO(content))
-        
-        if not reader.fieldnames or len(reader.fieldnames) == 1:
-            first_line = content.splitlines()[0] if content.splitlines() else ''
-            delimiter = ';' if ';' in first_line else ','
-            reader = csv.DictReader(io.StringIO(content), delimiter=delimiter)
 
-        fieldnames = [f.strip() for f in (reader.fieldnames or [])]
+        first_line = content.splitlines()[0] if content.splitlines() else ''
+        delimiter = ','
+        if '\t' in first_line:
+            delimiter = '\t'
+        elif ';' in first_line:
+            delimiter = ';'
+        elif ',' in first_line:
+            delimiter = ','
+        else:
+            try:
+                dialect = csv.Sniffer().sniff(first_line)
+                delimiter = dialect.delimiter
+            except Exception:
+                delimiter = ','
+
+        reader = csv.DictReader(io.StringIO(content), delimiter=delimiter)
+        fieldnames = [str(f).strip() for f in (reader.fieldnames or [])]
         field_map = {f.lower(): f for f in fieldnames}
 
-        # Identifica colunas de Latitude e Longitude
-        # Prioridade 1: X e Y (Y = Latitude, X = Longitude)
+        # Prioridade 1: Nomes explícitos de Latitude e Longitude
         lat_col = None
         lng_col = None
 
-        if 'y' in field_map and 'x' in field_map:
-            lat_col = field_map['y']
-            lng_col = field_map['x']
+        if 'latitude' in field_map and 'longitude' in field_map:
+            lat_col = field_map['latitude']
+            lng_col = field_map['longitude']
         elif 'lat' in field_map and 'lng' in field_map:
             lat_col = field_map['lat']
             lng_col = field_map['lng']
-        elif 'latitude' in field_map and 'longitude' in field_map:
-            lat_col = field_map['latitude']
-            lng_col = field_map['longitude']
         elif 'lat' in field_map and 'lon' in field_map:
             lat_col = field_map['lat']
             lng_col = field_map['lon']
+        elif 'latitude' in field_map and 'lon' in field_map:
+            lat_col = field_map['latitude']
+            lng_col = field_map['lon']
+        elif 'lat' in field_map and 'longitude' in field_map:
+            lat_col = field_map['lat']
+            lng_col = field_map['longitude']
+        elif 'y' in field_map and 'x' in field_map:
+            lat_col = field_map['y']
+            lng_col = field_map['x']
         elif 'y_coord' in field_map and 'x_coord' in field_map:
             lat_col = field_map['y_coord']
             lng_col = field_map['x_coord']
+        elif 'utms' in field_map and 'utmw' in field_map:
+            lat_col = field_map['utms']
+            lng_col = field_map['utmw']
+        elif 'northing' in field_map and 'easting' in field_map:
+            lat_col = field_map['northing']
+            lng_col = field_map['easting']
         else:
             for f_low, f_orig in field_map.items():
-                if f_low in ['y', 'lat', 'latitude']:
+                if f_low in ['latitude', 'lat']:
                     lat_col = f_orig
-                elif f_low in ['x', 'lng', 'lon', 'longitude']:
+                elif f_low in ['longitude', 'lng', 'lon']:
                     lng_col = f_orig
+            if not lat_col or not lng_col:
+                for f_low, f_orig in field_map.items():
+                    if f_low in ['y', 'utms', 'northing']:
+                        lat_col = f_orig
+                    elif f_low in ['x', 'utmw', 'easting']:
+                        lng_col = f_orig
 
         if not lat_col or not lng_col:
-            flash('Erro: Não foi possível identificar as colunas de coordenadas no CSV. Certifique-se de que a tabela possui colunas de Coordenadas como X e Y ou Latitude e Longitude.', 'warning')
+            flash('Erro: Não foi possível identificar as colunas de coordenadas no CSV. Certifique-se de que a tabela possui colunas de Coordenadas como Latitude e Longitude, X e Y ou UTM.', 'warning')
             return redirect(url_for('index'))
 
         conn = get_db_connection()
@@ -769,8 +839,33 @@ def upload_bulk_csv():
 
         for idx, row in enumerate(reader):
             try:
-                lat = parse_coordinate_value(row.get(lat_col))
-                lng = parse_coordinate_value(row.get(lng_col))
+                raw_lat_val = row.get(lat_col)
+                raw_lng_val = row.get(lng_col)
+
+                lat = parse_coordinate_value(raw_lat_val)
+                lng = parse_coordinate_value(raw_lng_val)
+
+                # Se lat/lng estiverem nulos ou fora de WGS84, busca se a linha possui colunas explícitas Latitude/Longitude
+                if lat is None or lng is None or not (-90 <= lat <= 90) or not (-180 <= lng <= 180):
+                    alt_lat_key = next((k for k in row.keys() if str(k).strip().lower() in ['latitude', 'lat']), None)
+                    alt_lng_key = next((k for k in row.keys() if str(k).strip().lower() in ['longitude', 'lng', 'lon']), None)
+                    if alt_lat_key and alt_lng_key:
+                        alt_lat = parse_coordinate_value(row.get(alt_lat_key))
+                        alt_lng = parse_coordinate_value(row.get(alt_lng_key))
+                        if alt_lat is not None and alt_lng is not None and (-90 <= alt_lat <= 90) and (-180 <= alt_lng <= 180):
+                            lat, lng = alt_lat, alt_lng
+
+                # Se ainda fora de WGS84 mas estiver no intervalo UTM (ex: 500.000, 7.400.000)
+                if lat is not None and lng is not None and (abs(lat) > 180 or abs(lng) > 180):
+                    x_val, y_val = (lat, lng) if lng > lat else (lng, lat)
+                    if 100000 <= x_val <= 900000 and 1000000 <= y_val <= 10000000:
+                        try:
+                            conv_lat, conv_lng = utm_to_latlon(x_val, y_val, zone=23, northern=False)
+                            if -90 <= conv_lat <= 90 and -180 <= conv_lng <= 180:
+                                lat, lng = conv_lat, conv_lng
+                        except Exception as e:
+                            print("Erro na conversao UTM:", e)
+
                 if lat is None or lng is None:
                     continue
 
