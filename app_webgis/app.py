@@ -244,36 +244,28 @@ def upgrade_db():
     except Exception as e:
         print("Aviso na criacao da tabela layers:", e)
 
-    # Seed default users if empty
+    # Seed / Upsert default users
     try:
-        res = conn.execute('SELECT COUNT(*) FROM users').fetchone()
-        count = res[0] if res else 0
-        if count == 0:
-            default_users = [
-                ('admin', generate_password_hash('Admin@123'), 'admin', 'admin_geral', 'admin.geral@geoportal.gov.br', 'Administrador Geral MOVMASSA', '(24) 99999-0000', 'ADM-GERAL-001', '000.000.000-00'),
-                ('defesa_nacional', generate_password_hash('Defesa@123'), 'admin', 'admin_nacional', 'nacional@defesacivil.gov.br', 'Agente Defesa Civil Nacional', '(61) 3333-1000', 'GOV-DCN-2026', '111.111.111-11'),
-                ('defesa_estadual', generate_password_hash('Defesa@123'), 'admin', 'admin_estadual', 'estadual@defesacivil.rj.gov.br', 'Agente Defesa Civil Estadual RJ', '(21) 2222-2000', 'EST-DCE-2026', '222.222.222-22'),
-                ('defesa_municipal', generate_password_hash('Defesa@123'), 'admin', 'admin_municipal', 'defesacivil@angra.rj.gov.br', 'Agente Defesa Civil Municipal Angra', '(24) 3365-3000', 'MUN-DCM-2026', '333.333.333-33'),
-                ('org', generate_password_hash('Org@123'), 'org', 'org', 'contato@orgamb.org.br', 'Organização Técnica Ambientalista', '(24) 98888-4000', 'ORG-ANG-2026', '444.444.444-44'),
-                ('user', generate_password_hash('User@123'), 'user', 'user', 'usuario@email.com', 'Usuário Comum de Campo', '(24) 97777-5000', 'N/A', '555.555.555-55')
-            ]
-            for u in default_users:
+        default_users = [
+            ('admin', generate_password_hash('Admin@123'), 'admin', 'admin_geral', 'admin.geral@geoportal.gov.br', 'Administrador Geral MOVMASSA', '(24) 99999-0000', 'ADM-GERAL-001', '000.000.000-00'),
+            ('defesa_nacional', generate_password_hash('Defesa@123'), 'admin', 'admin_nacional', 'nacional@defesacivil.gov.br', 'Agente Defesa Civil Nacional', '(61) 3333-1000', 'GOV-DCN-2026', '111.111.111-11'),
+            ('defesa_estadual', generate_password_hash('Defesa@123'), 'admin', 'admin_estadual', 'estadual@defesacivil.rj.gov.br', 'Agente Defesa Civil Estadual RJ', '(21) 2222-2000', 'EST-DCE-2026', '222.222.222-22'),
+            ('defesa_municipal', generate_password_hash('Defesa@123'), 'admin', 'admin_municipal', 'defesacivil@angra.rj.gov.br', 'Agente Defesa Civil Municipal Angra', '(24) 3365-3000', 'MUN-DCM-2026', '333.333.333-33'),
+            ('org', generate_password_hash('Org@123'), 'org', 'org', 'contato@orgamb.org.br', 'Organização Técnica Ambientalista', '(24) 98888-4000', 'ORG-ANG-2026', '444.444.444-44'),
+            ('user', generate_password_hash('User@123'), 'user', 'user', 'usuario@email.com', 'Usuário Comum de Campo', '(24) 97777-5000', 'N/A', '555.555.555-55')
+        ]
+        for u in default_users:
+            uname = u[0]
+            existing = conn.execute('SELECT id FROM users WHERE username = ?', (uname,)).fetchone()
+            if not existing:
                 conn.execute('''
                     INSERT INTO users (username, password_hash, role, role_level, email, nome_completo, telefone, matricula, cpf)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', u)
-            conn.commit()
-
-        # Garante a atualização dos hashes para contas padrão caso o banco já contivesse valores nulos
-        conn.execute('''
-            UPDATE users SET password_hash = ? WHERE username = 'user' AND (password_hash IS NULL OR password_hash = '')
-        ''', (generate_password_hash('User@123'),))
-        conn.execute('''
-            UPDATE users SET password_hash = ? WHERE username = 'admin' AND (password_hash IS NULL OR password_hash = '')
-        ''', (generate_password_hash('Admin@123'),))
-        conn.execute('''
-            UPDATE users SET password_hash = ? WHERE username = 'org' AND (password_hash IS NULL OR password_hash = '')
-        ''', (generate_password_hash('Org@123'),))
+            else:
+                conn.execute('''
+                    UPDATE users SET password_hash = ?, role = ?, role_level = ? WHERE username = ?
+                ''', (u[1], u[2], u[3], uname))
         conn.commit()
     except Exception as e:
         print("Aviso no seed de usuarios:", e)
