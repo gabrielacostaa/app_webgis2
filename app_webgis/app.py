@@ -3,6 +3,7 @@ from flask import Flask, render_template, request, redirect, url_for, flash, jso
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
+import sys
 import sqlite3
 import os
 import shutil
@@ -10,16 +11,47 @@ import tempfile
 import zipfile
 import geopandas as gpd
 from shapely.geometry import Point
-from pdf_generator import generate_occurrence_pdf
-import blockchain_engine
 
-app = Flask(__name__)
+try:
+    from pdf_generator import generate_occurrence_pdf
+    import blockchain_engine
+except ImportError:
+    from app_webgis.pdf_generator import generate_occurrence_pdf
+    import app_webgis.blockchain_engine as blockchain_engine
+
+# Detection of runtime environment (PyInstaller frozen or standard Python)
+if getattr(sys, 'frozen', False):
+    BUNDLE_DIR = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
+    APP_DATA_DIR = os.path.dirname(sys.executable)
+else:
+    BUNDLE_DIR = os.path.dirname(os.path.abspath(__file__))
+    APP_DATA_DIR = BUNDLE_DIR
+
+bundle_static = os.path.join(BUNDLE_DIR, 'app_webgis', 'static') if not os.path.exists(os.path.join(BUNDLE_DIR, 'static')) else os.path.join(BUNDLE_DIR, 'static')
+bundle_templates = os.path.join(BUNDLE_DIR, 'app_webgis', 'templates') if not os.path.exists(os.path.join(BUNDLE_DIR, 'templates')) else os.path.join(BUNDLE_DIR, 'templates')
+
+app = Flask(
+    __name__,
+    static_folder=bundle_static if os.path.exists(bundle_static) else 'static',
+    template_folder=bundle_templates if os.path.exists(bundle_templates) else 'templates'
+)
 app.config['SECRET_KEY'] = 'geoportal_secret_key'
-app.config['UPLOAD_FOLDER'] = 'static/uploads'
 app.config['LAYERS_FOLDER'] = '../'
 
-# Ensure upload folder exists
+# Persistent database and uploads in user application folder
+DB_PATH = os.path.join(APP_DATA_DIR, 'database.db')
+app.config['UPLOAD_FOLDER'] = os.path.join(APP_DATA_DIR, 'static', 'uploads')
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+
+# Copy pre-seeded database if running frozen and database.db doesn't exist yet
+if getattr(sys, 'frozen', False) and not os.path.exists(DB_PATH):
+    for candidate in [os.path.join(BUNDLE_DIR, 'app_webgis', 'database.db'), os.path.join(BUNDLE_DIR, 'database.db')]:
+        if os.path.exists(candidate):
+            try:
+                shutil.copy2(candidate, DB_PATH)
+            except Exception as e:
+                print("Aviso ao copiar database.db empacotado:", e)
+            break
 
 login_manager = LoginManager()
 login_manager.init_app(app)
@@ -38,7 +70,7 @@ class DBWrapper:
                 db_url = db_url.replace('postgres://', 'postgresql://', 1)
             self.conn = psycopg2.connect(db_url, cursor_factory=psycopg2.extras.DictCursor)
         else:
-            self.conn = sqlite3.connect('database.db')
+            self.conn = sqlite3.connect(DB_PATH)
             self.conn.row_factory = sqlite3.Row
 
     def execute(self, query, params=()):
@@ -73,7 +105,7 @@ def get_db_connection():
         return DBWrapper(is_postgres=False)
 
 class User(UserMixin):
-    def __init__(self, id, username, role, role_level='user', email='', nome_completo='', telefone='', matricula='', cpf=''):
+    def __init__(self, id, username, role, role_level='user', email='', nome_completo='', telefone='', matricula='', cpf='', funcao='agente'):
         self.id = id
         self.username = username
         self.role = role
@@ -83,6 +115,7 @@ class User(UserMixin):
         self.telefone = telefone
         self.matricula = matricula
         self.cpf = cpf
+        self.funcao = funcao
 
 @login_manager.user_loader
 def load_user(user_id):
@@ -100,7 +133,8 @@ def load_user(user_id):
             nome_completo=u.get('nome_completo', ''),
             telefone=u.get('telefone', ''),
             matricula=u.get('matricula', ''),
-            cpf=u.get('cpf', '')
+            cpf=u.get('cpf', ''),
+            funcao=u.get('funcao', 'agente')
         )
 def parse_coordinate_value(val):
     if val is None:
@@ -172,6 +206,17 @@ def utm_to_latlon(easting, northing, zone=23, northern=False):
     ) / math.cos(phi1))
 
     return lat, lng
+
+def get_client_ip():
+    """
+    Obtém o endereço IP real do cliente que enviou a requisição HTTP.
+    Verifica headers de proxy reverso (X-Forwarded-For, X-Real-IP) e faz fallback seguro.
+    """
+    if request.headers.get('X-Forwarded-For'):
+        return request.headers.get('X-Forwarded-For').split(',')[0].strip()
+    if request.headers.get('X-Real-IP'):
+        return request.headers.get('X-Real-IP').strip()
+    return request.remote_addr or '127.0.0.1'
 
 def upgrade_db():
     conn = get_db_connection()
@@ -275,11 +320,51 @@ def upgrade_db():
         conn.rollback()
         print("Aviso na criacao da tabela layers:", e)
 
+    # Migração estrutural da tabela blockchain_ledger para suportar múltiplos blocos por submissão
+    try:
+        if not is_pg:
+            res = conn.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='blockchain_ledger'").fetchone()
+            if res and 'submission_id INTEGER UNIQUE' in res[0]:
+                conn.execute("ALTER TABLE blockchain_ledger RENAME TO blockchain_ledger_legacy")
+                conn.execute(f'''
+                    CREATE TABLE blockchain_ledger (
+                        id {pk_type},
+                        submission_id INTEGER,
+                        block_index INTEGER,
+                        timestamp TEXT,
+                        data_hash TEXT,
+                        previous_hash TEXT,
+                        block_hash TEXT,
+                        curator_nome TEXT,
+                        curator_cpf TEXT,
+                        curator_matricula TEXT,
+                        curator_nivel TEXT,
+                        ip_origem TEXT,
+                        action_type TEXT DEFAULT 'INSERCAO_INICIAL',
+                        changes_summary TEXT,
+                        qrcode_filename TEXT
+                    )
+                ''')
+                conn.execute('''
+                    INSERT INTO blockchain_ledger (
+                        id, submission_id, block_index, timestamp, data_hash, previous_hash, block_hash,
+                        curator_nome, curator_cpf, curator_matricula, curator_nivel
+                    )
+                    SELECT id, submission_id, block_index, timestamp, data_hash, previous_hash, block_hash,
+                           curator_nome, curator_cpf, curator_matricula, curator_nivel
+                    FROM blockchain_ledger_legacy
+                ''')
+                conn.execute("DROP TABLE blockchain_ledger_legacy")
+                conn.commit()
+    except Exception as e:
+        conn.rollback()
+        print("Aviso na migração estrutural do blockchain_ledger:", e)
+
     try:
         conn.execute(f'''
             CREATE TABLE IF NOT EXISTS blockchain_ledger (
                 id {pk_type},
-                submission_id INTEGER UNIQUE,
+                submission_id INTEGER,
                 block_index INTEGER,
                 timestamp TEXT,
                 data_hash TEXT,
@@ -288,13 +373,30 @@ def upgrade_db():
                 curator_nome TEXT,
                 curator_cpf TEXT,
                 curator_matricula TEXT,
-                curator_nivel TEXT
+                curator_nivel TEXT,
+                ip_origem TEXT,
+                action_type TEXT DEFAULT 'INSERCAO_INICIAL',
+                changes_summary TEXT,
+                qrcode_filename TEXT
             )
         ''')
         conn.commit()
     except Exception as e:
         conn.rollback()
         print("Aviso na criacao da tabela blockchain_ledger:", e)
+
+    ledger_cols = [
+        ('ip_origem', 'TEXT'),
+        ('action_type', "TEXT DEFAULT 'INSERCAO_INICIAL'"),
+        ('changes_summary', 'TEXT'),
+        ('qrcode_filename', 'TEXT')
+    ]
+    for col, col_t in ledger_cols:
+        try:
+            conn.execute(f'ALTER TABLE blockchain_ledger ADD COLUMN {col} {col_t}')
+            conn.commit()
+        except Exception:
+            conn.rollback()
 
     # Seed / Upsert default users
     default_users = [
@@ -480,12 +582,16 @@ def upgrade_db():
         ('midia_url', 'TEXT'),
         ('media_files_json', 'TEXT'),
         
-        # Responsável & Origem
-        ('origem', 'TEXT DEFAULT "Curadoria"'),
+        # Responsável & Origem & Auditoria / Rastreabilidade
+        ('origem', "TEXT DEFAULT 'Curadoria'"),
         ('responsavel_nome', 'TEXT'),
         ('responsavel_cpf', 'TEXT'),
         ('responsavel_matricula', 'TEXT'),
-        ('responsavel_nivel', 'TEXT')
+        ('responsavel_nivel', 'TEXT'),
+        ('telefone_contato', 'TEXT'),
+        ('email_contato', 'TEXT'),
+        ('ip_origem', 'TEXT'),
+        ('qrcode_filename', 'TEXT')
     ]
     for col, col_type in sub_cols:
         try:
@@ -493,8 +599,521 @@ def upgrade_db():
             conn.commit()
         except Exception:
             conn.rollback()
+
+    # Seed de ocorrências oficiais da Curadoria caso o banco esteja vazio
+    seed_initial_curadoria(conn)
             
     conn.close()
+
+def seed_initial_curadoria(conn):
+    try:
+        res = conn.execute("SELECT COUNT(*) FROM submissions").fetchone()
+        count = res[0] if res else 0
+        if count > 0:
+            return
+
+        print("--> Inicializando banco com as 11 ocorrencias oficiais da Curadoria do MOVMASSA...")
+        
+        curated_points = [
+            {
+                "id": 204,
+                "title": "Ponto Ocorrencia CSV #1",
+                "status": "aprovado",
+                "lat": -23.017027,
+                "lng": -44.184746,
+                "tipologia": "Deslizamento de Encosta",
+                "bairro": "Nao Informado",
+                "zona": "Periourbana / Encosta",
+                "data_evento": "2026-09-29",
+                "description": "Ponto importado em lote via arquivo CSV por Administrador Geral.",
+                "clima_precipitacao_evento": "425",
+                "clima_precipitacao_mensal": "1500",
+                "clima_precipitacao_5d": "100",
+                "clima_precipitacao_10d": "580",
+                "clima_vento": "",
+                "clima_temperatura": "",
+                "clima_pressao": "",
+                "ped_classe_solo": "Argissolo Vermelho Amarelo",
+                "ped_profundidade": "2 metros",
+                "ped_textura": "Argiloso",
+                "ped_porosidade": "35",
+                "ped_umidade_evento": "",
+                "geo_declividade": "24",
+                "geo_altitude": "500",
+                "geo_forma_terreno": "",
+                "antrop_escavacao": "Sim",
+                "antrop_sobrecarga": "",
+                "antrop_tipo_uso": "app",
+                "econ_custo_total": "2000000,00",
+                "n_mortos": 150,
+                "n_feridos": 432,
+                "telefone_contato": "(24) 99876-5432",
+                "email_contato": "curadoria.defesa@angra.rj.gov.br",
+                "ip_origem": "187.60.142.10",
+                "responsavel_nome": "Administrador Geral",
+                "responsavel_cpf": "000.000.000-00",
+                "responsavel_matricula": "ADM-001",
+                "responsavel_nivel": "admin_geral"
+            },
+            {
+                "id": 205,
+                "title": "Ponto Ocorrencia CSV #2",
+                "status": "pendente",
+                "lat": -22.98625,
+                "lng": -44.30781,
+                "tipologia": "Deslizamento de Encosta",
+                "bairro": "Nao Informado",
+                "zona": "Periourbana / Encosta",
+                "data_evento": "2026-09-29",
+                "description": "Ponto importado em lote via arquivo CSV por Administrador Geral.",
+                "clima_precipitacao_evento": "",
+                "clima_precipitacao_mensal": "",
+                "clima_precipitacao_5d": "",
+                "clima_precipitacao_10d": "",
+                "clima_vento": "",
+                "clima_temperatura": "",
+                "clima_pressao": "",
+                "ped_classe_solo": "",
+                "ped_profundidade": "",
+                "ped_textura": "",
+                "ped_porosidade": "",
+                "ped_umidade_evento": "",
+                "geo_declividade": "",
+                "geo_altitude": "",
+                "geo_forma_terreno": "",
+                "antrop_escavacao": "",
+                "antrop_sobrecarga": "",
+                "antrop_tipo_uso": "",
+                "econ_custo_total": "",
+                "n_mortos": 0,
+                "n_feridos": 0,
+                "telefone_contato": "(24) 99876-5432",
+                "email_contato": "curadoria.defesa@angra.rj.gov.br",
+                "ip_origem": "187.60.142.10",
+                "responsavel_nome": "Administrador Geral",
+                "responsavel_cpf": "000.000.000-00",
+                "responsavel_matricula": "ADM-001",
+                "responsavel_nivel": "admin_geral"
+            },
+            {
+                "id": 206,
+                "title": "Ponto Ocorrencia CSV #3",
+                "status": "pendente",
+                "lat": -23.011347,
+                "lng": -44.323,
+                "tipologia": "Deslizamento de Encosta",
+                "bairro": "Nao Informado",
+                "zona": "Periourbana / Encosta",
+                "data_evento": "2026-09-29",
+                "description": "Ponto importado em lote via arquivo CSV por Administrador Geral.",
+                "clima_precipitacao_evento": "",
+                "clima_precipitacao_mensal": "",
+                "clima_precipitacao_5d": "",
+                "clima_precipitacao_10d": "",
+                "clima_vento": "",
+                "clima_temperatura": "",
+                "clima_pressao": "",
+                "ped_classe_solo": "",
+                "ped_profundidade": "",
+                "ped_textura": "",
+                "ped_porosidade": "",
+                "ped_umidade_evento": "",
+                "geo_declividade": "",
+                "geo_altitude": "",
+                "geo_forma_terreno": "",
+                "antrop_escavacao": "",
+                "antrop_sobrecarga": "",
+                "antrop_tipo_uso": "",
+                "econ_custo_total": "",
+                "n_mortos": 0,
+                "n_feridos": 0,
+                "telefone_contato": "(24) 99876-5432",
+                "email_contato": "curadoria.defesa@angra.rj.gov.br",
+                "ip_origem": "187.60.142.10",
+                "responsavel_nome": "Administrador Geral",
+                "responsavel_cpf": "000.000.000-00",
+                "responsavel_matricula": "ADM-001",
+                "responsavel_nivel": "admin_geral"
+            },
+            {
+                "id": 207,
+                "title": "Ponto Ocorrencia CSV #4",
+                "status": "pendente",
+                "lat": -22.996155,
+                "lng": -44.249306,
+                "tipologia": "Deslizamento de Encosta",
+                "bairro": "Nao Informado",
+                "zona": "Periourbana / Encosta",
+                "data_evento": "2026-09-29",
+                "description": "Ponto importado em lote via arquivo CSV por Administrador Geral.",
+                "clima_precipitacao_evento": "",
+                "clima_precipitacao_mensal": "",
+                "clima_precipitacao_5d": "",
+                "clima_precipitacao_10d": "",
+                "clima_vento": "",
+                "clima_temperatura": "",
+                "clima_pressao": "",
+                "ped_classe_solo": "",
+                "ped_profundidade": "",
+                "ped_textura": "",
+                "ped_porosidade": "",
+                "ped_umidade_evento": "",
+                "geo_declividade": "",
+                "geo_altitude": "",
+                "geo_forma_terreno": "",
+                "antrop_escavacao": "",
+                "antrop_sobrecarga": "",
+                "antrop_tipo_uso": "",
+                "econ_custo_total": "",
+                "n_mortos": 0,
+                "n_feridos": 0,
+                "telefone_contato": "(24) 99876-5432",
+                "email_contato": "curadoria.defesa@angra.rj.gov.br",
+                "ip_origem": "187.60.142.10",
+                "responsavel_nome": "Administrador Geral",
+                "responsavel_cpf": "000.000.000-00",
+                "responsavel_matricula": "ADM-001",
+                "responsavel_nivel": "admin_geral"
+            },
+            {
+                "id": 208,
+                "title": "Ponto Ocorrencia CSV #5",
+                "status": "pendente",
+                "lat": -22.9574,
+                "lng": -44.44094,
+                "tipologia": "Deslizamento de Encosta",
+                "bairro": "Nao Informado",
+                "zona": "Periourbana / Encosta",
+                "data_evento": "2026-09-29",
+                "description": "Ponto importado em lote via arquivo CSV por Administrador Geral.",
+                "clima_precipitacao_evento": "",
+                "clima_precipitacao_mensal": "",
+                "clima_precipitacao_5d": "",
+                "clima_precipitacao_10d": "",
+                "clima_vento": "",
+                "clima_temperatura": "",
+                "clima_pressao": "",
+                "ped_classe_solo": "",
+                "ped_profundidade": "",
+                "ped_textura": "",
+                "ped_porosidade": "",
+                "ped_umidade_evento": "",
+                "geo_declividade": "",
+                "geo_altitude": "",
+                "geo_forma_terreno": "",
+                "antrop_escavacao": "",
+                "antrop_sobrecarga": "",
+                "antrop_tipo_uso": "",
+                "econ_custo_total": "",
+                "n_mortos": 0,
+                "n_feridos": 0,
+                "telefone_contato": "(24) 99876-5432",
+                "email_contato": "curadoria.defesa@angra.rj.gov.br",
+                "ip_origem": "187.60.142.10",
+                "responsavel_nome": "Administrador Geral",
+                "responsavel_cpf": "000.000.000-00",
+                "responsavel_matricula": "ADM-001",
+                "responsavel_nivel": "admin_geral"
+            },
+            {
+                "id": 209,
+                "title": "Ponto Ocorrencia CSV #6",
+                "status": "pendente",
+                "lat": -22.958912,
+                "lng": -44.284492,
+                "tipologia": "Deslizamento de Encosta",
+                "bairro": "Nao Informado",
+                "zona": "Periourbana / Encosta",
+                "data_evento": "2026-09-29",
+                "description": "Ponto importado em lote via arquivo CSV por Administrador Geral.",
+                "clima_precipitacao_evento": "",
+                "clima_precipitacao_mensal": "",
+                "clima_precipitacao_5d": "",
+                "clima_precipitacao_10d": "",
+                "clima_vento": "",
+                "clima_temperatura": "",
+                "clima_pressao": "",
+                "ped_classe_solo": "",
+                "ped_profundidade": "",
+                "ped_textura": "",
+                "ped_porosidade": "",
+                "ped_umidade_evento": "",
+                "geo_declividade": "",
+                "geo_altitude": "",
+                "geo_forma_terreno": "",
+                "antrop_escavacao": "",
+                "antrop_sobrecarga": "",
+                "antrop_tipo_uso": "",
+                "econ_custo_total": "",
+                "n_mortos": 0,
+                "n_feridos": 0,
+                "telefone_contato": "(24) 99876-5432",
+                "email_contato": "curadoria.defesa@angra.rj.gov.br",
+                "ip_origem": "187.60.142.10",
+                "responsavel_nome": "Administrador Geral",
+                "responsavel_cpf": "000.000.000-00",
+                "responsavel_matricula": "ADM-001",
+                "responsavel_nivel": "admin_geral"
+            },
+            {
+                "id": 210,
+                "title": "Ponto Ocorrencia CSV #7",
+                "status": "pendente",
+                "lat": -23.00192,
+                "lng": -44.313557,
+                "tipologia": "Deslizamento de Encosta",
+                "bairro": "Nao Informado",
+                "zona": "Periourbana / Encosta",
+                "data_evento": "2026-09-29",
+                "description": "Ponto importado em lote via arquivo CSV por Administrador Geral.",
+                "clima_precipitacao_evento": "",
+                "clima_precipitacao_mensal": "",
+                "clima_precipitacao_5d": "",
+                "clima_precipitacao_10d": "",
+                "clima_vento": "",
+                "clima_temperatura": "",
+                "clima_pressao": "",
+                "ped_classe_solo": "",
+                "ped_profundidade": "",
+                "ped_textura": "",
+                "ped_porosidade": "",
+                "ped_umidade_evento": "",
+                "geo_declividade": "",
+                "geo_altitude": "",
+                "geo_forma_terreno": "",
+                "antrop_escavacao": "",
+                "antrop_sobrecarga": "",
+                "antrop_tipo_uso": "",
+                "econ_custo_total": "",
+                "n_mortos": 0,
+                "n_feridos": 0,
+                "telefone_contato": "(24) 99876-5432",
+                "email_contato": "curadoria.defesa@angra.rj.gov.br",
+                "ip_origem": "187.60.142.10",
+                "responsavel_nome": "Administrador Geral",
+                "responsavel_cpf": "000.000.000-00",
+                "responsavel_matricula": "ADM-001",
+                "responsavel_nivel": "admin_geral"
+            },
+            {
+                "id": 211,
+                "title": "Ponto Ocorrencia CSV #8",
+                "status": "pendente",
+                "lat": -22.980824,
+                "lng": -44.289955,
+                "tipologia": "Deslizamento de Encosta",
+                "bairro": "Nao Informado",
+                "zona": "Periourbana / Encosta",
+                "data_evento": "2026-09-29",
+                "description": "Ponto importado em lote via arquivo CSV por Administrador Geral.",
+                "clima_precipitacao_evento": "",
+                "clima_precipitacao_mensal": "",
+                "clima_precipitacao_5d": "",
+                "clima_precipitacao_10d": "",
+                "clima_vento": "",
+                "clima_temperatura": "",
+                "clima_pressao": "",
+                "ped_classe_solo": "",
+                "ped_profundidade": "",
+                "ped_textura": "",
+                "ped_porosidade": "",
+                "ped_umidade_evento": "",
+                "geo_declividade": "",
+                "geo_altitude": "",
+                "geo_forma_terreno": "",
+                "antrop_escavacao": "",
+                "antrop_sobrecarga": "",
+                "antrop_tipo_uso": "",
+                "econ_custo_total": "",
+                "n_mortos": 0,
+                "n_feridos": 0,
+                "telefone_contato": "(24) 99876-5432",
+                "email_contato": "curadoria.defesa@angra.rj.gov.br",
+                "ip_origem": "187.60.142.10",
+                "responsavel_nome": "Administrador Geral",
+                "responsavel_cpf": "000.000.000-00",
+                "responsavel_matricula": "ADM-001",
+                "responsavel_nivel": "admin_geral"
+            },
+            {
+                "id": 212,
+                "title": "Ponto Ocorrencia CSV #9",
+                "status": "pendente",
+                "lat": -22.960516,
+                "lng": -44.440907,
+                "tipologia": "Deslizamento de Encosta",
+                "bairro": "Nao Informado",
+                "zona": "Periourbana / Encosta",
+                "data_evento": "2026-09-29",
+                "description": "Ponto importado em lote via arquivo CSV por Administrador Geral.",
+                "clima_precipitacao_evento": "",
+                "clima_precipitacao_mensal": "",
+                "clima_precipitacao_5d": "",
+                "clima_precipitacao_10d": "",
+                "clima_vento": "",
+                "clima_temperatura": "",
+                "clima_pressao": "",
+                "ped_classe_solo": "",
+                "ped_profundidade": "",
+                "ped_textura": "",
+                "ped_porosidade": "",
+                "ped_umidade_evento": "",
+                "geo_declividade": "",
+                "geo_altitude": "",
+                "geo_forma_terreno": "",
+                "antrop_escavacao": "",
+                "antrop_sobrecarga": "",
+                "antrop_tipo_uso": "",
+                "econ_custo_total": "",
+                "n_mortos": 0,
+                "n_feridos": 0,
+                "telefone_contato": "(24) 99876-5432",
+                "email_contato": "curadoria.defesa@angra.rj.gov.br",
+                "ip_origem": "187.60.142.10",
+                "responsavel_nome": "Administrador Geral",
+                "responsavel_cpf": "000.000.000-00",
+                "responsavel_matricula": "ADM-001",
+                "responsavel_nivel": "admin_geral"
+            },
+            {
+                "id": 215,
+                "title": "DT",
+                "status": "aprovado",
+                "data_evento": "2026-09-29",
+                "bairro": "Fzd Caxias",
+                "zona": "Periourbana / Encosta",
+                "lat": -22.759851,
+                "lng": -43.69708,
+                "tipologia": "Deslizamento de Encosta",
+                "description": "",
+                "clima_precipitacao_evento": "150",
+                "clima_precipitacao_mensal": "250",
+                "clima_precipitacao_5d": "100",
+                "clima_precipitacao_10d": "150",
+                "clima_vento": "10",
+                "clima_temperatura": "20",
+                "clima_pressao": "990",
+                "ped_classe_solo": "Cambissolo",
+                "ped_profundidade": "2",
+                "ped_textura": "Franco-Argiloso",
+                "ped_porosidade": "55",
+                "ped_umidade_evento": "50%",
+                "geo_declividade": "30",
+                "geo_altitude": "1250",
+                "geo_forma_terreno": "Concava ",
+                "antrop_escavacao": "Nao",
+                "antrop_sobrecarga": "Nao",
+                "antrop_tipo_uso": "APP",
+                "econ_custo_total": "",
+                "n_mortos": 0,
+                "n_feridos": 0,
+                "telefone_contato": "(24) 99876-5432",
+                "email_contato": "curadoria.defesa@angra.rj.gov.br",
+                "ip_origem": "187.60.142.10",
+                "responsavel_nome": "Visitante do Geoportal",
+                "responsavel_cpf": "N/A",
+                "responsavel_matricula": "N/A",
+                "responsavel_nivel": "Visitante"
+            },
+            {
+                "id": 216,
+                "title": "PONTO_2",
+                "status": "pendente",
+                "data_evento": "2026-09-27",
+                "bairro": "Angra dos Reis",
+                "zona": "Periourbana / Encosta",
+                "lat": -22.759851,
+                "lng": -43.697086,
+                "tipologia": "Deslizamento de Encosta",
+                "description": "",
+                "clima_precipitacao_evento": "",
+                "clima_precipitacao_mensal": "",
+                "clima_precipitacao_5d": "",
+                "clima_precipitacao_10d": "",
+                "clima_vento": "",
+                "clima_temperatura": "",
+                "clima_pressao": "",
+                "ped_classe_solo": "",
+                "ped_profundidade": "",
+                "ped_textura": "",
+                "ped_porosidade": "",
+                "ped_umidade_evento": "",
+                "geo_declividade": "",
+                "geo_altitude": "",
+                "geo_forma_terreno": "",
+                "antrop_escavacao": "",
+                "antrop_sobrecarga": "",
+                "antrop_tipo_uso": "",
+                "econ_custo_total": "",
+                "n_mortos": 0,
+                "n_feridos": 0,
+                "telefone_contato": "(24) 99876-5432",
+                "email_contato": "curadoria.defesa@angra.rj.gov.br",
+                "ip_origem": "187.60.142.10",
+                "responsavel_nome": "Visitante do Geoportal",
+                "responsavel_cpf": "N/A",
+                "responsavel_matricula": "N/A",
+                "responsavel_nivel": "Visitante"
+            }
+        ]
+        
+        for p in curated_points:
+            cur = conn.execute('''
+                INSERT INTO submissions (
+                    id, user_id, title, description, submission_type, status, lat, lng,
+                    data_evento, id_pais, uf, municipio, bairro, tipologia, zona,
+                    clima_precipitacao_evento, clima_precipitacao_mensal, clima_precipitacao_5d, clima_precipitacao_10d,
+                    clima_vento, clima_temperatura, clima_pressao,
+                    ped_classe_solo, ped_textura, ped_profundidade, ped_porosidade, ped_umidade_evento,
+                    geo_declividade, geo_altitude, geo_forma_terreno,
+                    antrop_escavacao, antrop_sobrecarga, antrop_tipo_uso,
+                    n_mortos, n_feridos, econ_custo_total,
+                    origem, telefone_contato, email_contato, ip_origem,
+                    responsavel_nome, responsavel_cpf, responsavel_matricula, responsavel_nivel
+                ) VALUES (
+                    ?, 1, ?, ?, 'point', ?, ?, ?,
+                    ?, 'Brasil', 'RJ', 'Angra dos Reis', ?, ?, ?,
+                    ?, ?, ?, ?,
+                    ?, ?, ?,
+                    ?, ?, ?, ?, ?,
+                    ?, ?, ?,
+                    ?, ?, ?,
+                    ?, ?, ?,
+                    'Curadoria', ?, ?, ?,
+                    ?, ?, ?, ?
+                )
+            ''', (
+                p['id'], p['title'], p['description'], p['status'], p['lat'], p['lng'],
+                p['data_evento'], p['bairro'], p['tipologia'], p['zona'],
+                p['clima_precipitacao_evento'], p['clima_precipitacao_mensal'], p['clima_precipitacao_5d'], p['clima_precipitacao_10d'],
+                p['clima_vento'], p['clima_temperatura'], p['clima_pressao'],
+                p['ped_classe_solo'], p['ped_textura'], p['ped_profundidade'], p['ped_porosidade'], p['ped_umidade_evento'],
+                p['geo_declividade'], p['geo_altitude'], p['geo_forma_terreno'],
+                p['antrop_escavacao'], p['antrop_sobrecarga'], p['antrop_tipo_uso'],
+                p['n_mortos'], p['n_feridos'], p['econ_custo_total'],
+                p['telefone_contato'], p['email_contato'], p['ip_origem'],
+                p['responsavel_nome'], p['responsavel_cpf'], p['responsavel_matricula'], p['responsavel_nivel']
+            ))
+            sub_id = p['id']
+            
+            # Notarização no Blockchain e geração do primeiro QR Code
+            try:
+                blockchain_engine.notarize_record(
+                    conn,
+                    sub_id,
+                    action_type='INSERCAO_INICIAL',
+                    changes_summary='Notarizacao cadastral oficial MOVMASSA',
+                    ip_origem=p['ip_origem'],
+                    upload_folder=app.config['UPLOAD_FOLDER']
+                )
+            except Exception as ne:
+                print(f"Aviso ao notarizar ponto #{sub_id}:", ne)
+                
+        conn.commit()
+        print(f"--> [OK] {len(curated_points)} pontos reais da Curadoria foram sincronizados e notarizados com QR Code!")
+    except Exception as e:
+        conn.rollback()
+        print("[!] Erro no seed de pontos da curadoria:", e)
 
 upgrade_db()
 
@@ -642,7 +1261,8 @@ def login():
                 nome_completo=u_dict.get('nome_completo', ''),
                 telefone=u_dict.get('telefone', ''),
                 matricula=u_dict.get('matricula', ''),
-                cpf=u_dict.get('cpf', '')
+                cpf=u_dict.get('cpf', ''),
+                funcao=u_dict.get('funcao', 'agente')
             )
             login_user(user_obj)
             flash(f'Bem-vindo, {user_obj.nome_completo or user_obj.username}!', 'success')
@@ -704,23 +1324,37 @@ def get_layers():
 
 @app.route('/api/layer/<path:filename>')
 def serve_layer(filename):
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    file_path = os.path.join(base_dir, filename)
-    if os.path.exists(file_path):
-        return send_from_directory(base_dir, filename)
+    # Procura na pasta de dados do usuário
+    user_file = os.path.join(APP_DATA_DIR, filename)
+    if os.path.exists(user_file):
+        return send_from_directory(APP_DATA_DIR, filename)
     
     # Se não achar na raiz, tenta na pasta de uploads configurada
     upload_folder = app.config.get('UPLOAD_FOLDER', '')
     if upload_folder and os.path.exists(os.path.join(upload_folder, filename)):
         return send_from_directory(upload_folder, filename)
+
+    # Procura nos diretórios empacotados / código fonte
+    for cand in [BUNDLE_DIR, os.path.join(BUNDLE_DIR, 'app_webgis'), os.path.dirname(os.path.abspath(__file__))]:
+        cand_path = os.path.join(cand, filename)
+        if os.path.exists(cand_path):
+            return send_from_directory(cand, filename)
         
     abort(404)
 
 @app.route('/<path:filename>')
 def serve_direct_geojson(filename):
     if filename.endswith('.geojson'):
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        return send_from_directory(base_dir, filename)
+        # Procura na pasta de dados do usuário
+        user_file = os.path.join(APP_DATA_DIR, filename)
+        if os.path.exists(user_file):
+            return send_from_directory(APP_DATA_DIR, filename)
+
+        # Procura nos diretórios empacotados / código fonte
+        for cand in [BUNDLE_DIR, os.path.join(BUNDLE_DIR, 'app_webgis'), os.path.dirname(os.path.abspath(__file__))]:
+            cand_path = os.path.join(cand, filename)
+            if os.path.exists(cand_path):
+                return send_from_directory(cand, filename)
     abort(404)
 
 @app.route('/upload', methods=['POST'])
@@ -772,13 +1406,32 @@ def upload_file():
 
 @app.route('/upload_point', methods=['POST'])
 def upload_point():
-    title = request.form.get('title')
-    description = request.form.get('description')
+    title = request.form.get('title', '').strip()
+    description = request.form.get('description', '').strip()
     lat = parse_coordinate_value(request.form.get('lat'))
     lng = parse_coordinate_value(request.form.get('lng'))
     data_evento = request.form.get('data_evento')
     
-    responsavel_nome = request.form.get('responsavel_nome', '').strip() or (current_user.nome_completo or current_user.username if current_user.is_authenticated else 'Visitante do Geoportal')
+    # Validação obrigatória de Telefone com DDD e E-mail para usuários sem cadastro
+    telefone_contato = request.form.get('telefone_contato', '').strip()
+    email_contato = request.form.get('email_contato', '').strip()
+    client_ip = get_client_ip()
+
+    if not current_user.is_authenticated:
+        if not telefone_contato or not email_contato:
+            flash('Para usuários sem cadastro, o preenchimento de Telefone (com DDD) e E-mail é OBRIGATÓRIO por motivos de auditoria e responsabilização civil/penal.', 'danger')
+            return redirect(url_for('index'))
+    else:
+        if not telefone_contato:
+            telefone_contato = getattr(current_user, 'telefone', '') or ''
+        if not email_contato:
+            email_contato = getattr(current_user, 'email', '') or ''
+
+    if lat is None or lng is None:
+        flash('Erro: Coordenadas geográficas inválidas ou não informadas. Por favor, clique no mapa ou insira latitude e longitude válidas.', 'danger')
+        return redirect(url_for('index'))
+
+    responsavel_nome = request.form.get('responsavel_nome', '').strip() or (current_user.nome_completo or current_user.username if current_user.is_authenticated else 'Cidadão / Usuário de Campo')
     responsavel_cpf = request.form.get('responsavel_cpf', '').strip() or (current_user.cpf if current_user.is_authenticated else 'N/A')
     user_id = current_user.id if current_user.is_authenticated else 1
     role_lvl = (current_user.role_level or current_user.role) if current_user.is_authenticated else 'Visitante'
@@ -818,24 +1471,53 @@ def upload_point():
     media_filename = media_list[0] if media_list else None
         
     conn = get_db_connection()
-    conn.execute('''
+    cur = conn.execute('''
         INSERT INTO submissions (
             user_id, title, description, submission_type, lat, lng, media_filename, media_files_json, filename, data_evento, municipio, uf,
-            origem, responsavel_nome, responsavel_cpf, responsavel_matricula, responsavel_nivel
+            origem, responsavel_nome, responsavel_cpf, responsavel_matricula, responsavel_nivel,
+            telefone_contato, email_contato, ip_origem
         ) 
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ''', (
-        user_id, title, description, 'point', lat, lng, media_filename, media_json_str, '', data_evento, 'Angra dos Reis', 'RJ',
+        user_id, title or 'Ocorrência Reportada em Campo', description, 'point', lat, lng, media_filename, media_json_str, '', data_evento, 'Angra dos Reis', 'RJ',
         'Curadoria',
         responsavel_nome,
         responsavel_cpf,
         matricula,
-        role_lvl
+        role_lvl,
+        telefone_contato,
+        email_contato,
+        client_ip
     ))
+    sub_id = cur.lastrowid
     conn.commit()
+
+    # Notarização imediata em Blockchain + Geração do Primeiro QR Code
+    try:
+        b_res = blockchain_engine.notarize_record(
+            conn,
+            sub_id,
+            curator_user=current_user if current_user.is_authenticated else None,
+            action_type='INSERCAO_INICIAL',
+            changes_summary='Envio de ocorrência por usuário (Auditoria de IP e Contato gravados)',
+            ip_origem=client_ip,
+            host_url=request.host_url,
+            upload_folder=app.config['UPLOAD_FOLDER']
+        )
+        qr_info = f" (Notarizada em Blockchain Bloco #{b_res['block_index']} com QR Code)" if b_res else ""
+    except Exception as b_err:
+        print("[!] Erro ao notarizar submissão:", b_err)
+        qr_info = ""
+
     conn.close()
     
-    flash('Ocorrência reportada com sucesso! Aguardando aprovação na Curadoria.', 'success')
+    try:
+        import threading
+        threading.Thread(target=sync_with_cloud, daemon=True).start()
+    except Exception:
+        pass
+        
+    flash(f'Ocorrência #{sub_id} reportada com sucesso!{qr_info} Registro sob auditoria de IP ({client_ip}). Aguardando homologação na Curadoria.', 'success')
     return redirect(url_for('index'))
 
 @app.route('/upload_shapefile_bulk', methods=['POST'])
@@ -1175,6 +1857,12 @@ def get_occurrences():
             "responsavel_cpf": p_dict.get('responsavel_cpf') or 'N/A',
             "responsavel_matricula": p_dict.get('responsavel_matricula') or 'N/A',
             "responsavel_nivel": p_dict.get('responsavel_nivel') or 'Geral',
+            "telefone_contato": p_dict.get('telefone_contato') or 'Não informado',
+            "email_contato": p_dict.get('email_contato') or 'Não informado',
+            "ip_origem": p_dict.get('ip_origem') or '127.0.0.1',
+            "qrcode_filename": p_dict.get('qrcode_filename'),
+            "qrcode_url": url_for('serve_layer', filename=p_dict.get('qrcode_filename')) if p_dict.get('qrcode_filename') else None,
+            "tracking_url": url_for('blockchain_track_view', sub_id=p['id']),
             "can_delete": can_delete,
             "area_u_habitacoes": p_dict.get('area_u_habitacoes'),
             "perc_area_atu": p_dict.get('perc_area_atu'),
@@ -1290,23 +1978,33 @@ def occurrence_pdf(point_id):
         
     p_dict = dict(point)
     
-    # Buscar ou gerar registro na Blockchain Ledger para o laudo
-    block = conn.execute('SELECT * FROM blockchain_ledger WHERE submission_id = ?', (point_id,)).fetchone()
-    if not block:
+    # Buscar ou gerar histórico e último bloco no Blockchain Ledger para o laudo
+    history = blockchain_engine.get_submission_history(conn, point_id)
+    if not history:
         try:
-            b_info = blockchain_engine.notarize_record(conn, point_id, current_user)
-            if b_info:
-                block = conn.execute('SELECT * FROM blockchain_ledger WHERE submission_id = ?', (point_id,)).fetchone()
+            b_info = blockchain_engine.notarize_record(
+                conn,
+                point_id,
+                current_user,
+                action_type='INSERCAO_INICIAL',
+                changes_summary='Notarização para Emissão de Laudo Técnico',
+                ip_origem=get_client_ip(),
+                host_url=request.host_url,
+                upload_folder=app.config['UPLOAD_FOLDER']
+            )
+            history = blockchain_engine.get_submission_history(conn, point_id)
         except Exception as e:
             print("Aviso ao notarizar no PDF:", e)
             
-    if block:
-        b_dict = dict(block)
+    if history:
+        b_dict = history[-1]
         p_dict['block_hash'] = b_dict.get('block_hash')
         p_dict['data_hash'] = b_dict.get('data_hash')
         p_dict['previous_hash'] = b_dict.get('previous_hash')
         p_dict['block_index'] = b_dict.get('block_index')
         p_dict['blockchain_timestamp'] = b_dict.get('timestamp')
+        p_dict['qrcode_filename'] = b_dict.get('qrcode_filename')
+        p_dict['ip_origem'] = b_dict.get('ip_origem') or p_dict.get('ip_origem')
         
     conn.close()
     
@@ -1321,29 +2019,84 @@ def occurrence_pdf(point_id):
             mimetype='application/pdf'
         )
 
-# --- Rotas de Auditoria Blockchain & Cadeia de Custódia ---
+# --- Rotas de Auditoria Blockchain, Rastreabilidade e Cadeia de Custódia ---
+
+@app.route('/blockchain/track/<int:sub_id>')
+@app.route('/blockchain/track/<int:sub_id>', endpoint='blockchain_track')
+def blockchain_track_view(sub_id):
+    """
+    Página pública de rastreamento e auditoria em Blockchain.
+    Acessível via escaneamento do QR Code por qualquer cidadão ou autoridade.
+    Exibe a linha do tempo completa de inserção e todas as alterações com respectivos QR Codes e hashes.
+    """
+    conn = get_db_connection()
+    submission = conn.execute('SELECT * FROM submissions WHERE id = ?', (sub_id,)).fetchone()
+    if not submission:
+        conn.close()
+        flash('Registro de ocorrência não encontrado.', 'warning')
+        return redirect(url_for('index'))
+    
+    sub_dict = dict(submission)
+    history = blockchain_engine.get_submission_history(conn, sub_id)
+    if not history:
+        try:
+            blockchain_engine.notarize_record(
+                conn,
+                sub_id,
+                action_type='INSERCAO_INICIAL',
+                changes_summary='Notarização cadastral inicial de auditoria',
+                ip_origem=sub_dict.get('ip_origem') or '127.0.0.1',
+                host_url=request.host_url,
+                upload_folder=app.config['UPLOAD_FOLDER']
+            )
+            history = blockchain_engine.get_submission_history(conn, sub_id)
+        except Exception as e:
+            print("Aviso ao notarizar visualização:", e)
+
+    verification = blockchain_engine.verify_record_integrity(conn, sub_id)
+    conn.close()
+
+    latest_block = history[-1] if history else None
+    
+    return render_template(
+        'blockchain_track.html',
+        sub=sub_dict,
+        submission=sub_dict,
+        history=history,
+        verification=verification,
+        latest_block=latest_block
+    )
 
 @app.route('/api/occurrence/<int:sub_id>/blockchain')
 def api_occurrence_blockchain(sub_id):
     conn = get_db_connection()
-    block = conn.execute('SELECT * FROM blockchain_ledger WHERE submission_id = ?', (sub_id,)).fetchone()
-    if not block:
-        # Se aprovada mas ainda sem bloco, notariza automaticamente
-        sub = conn.execute('SELECT status FROM submissions WHERE id = ?', (sub_id,)).fetchone()
-        if sub and (sub['status'] or '').lower() == 'aprovado':
+    history = blockchain_engine.get_submission_history(conn, sub_id)
+    if not history:
+        sub = conn.execute('SELECT status, ip_origem FROM submissions WHERE id = ?', (sub_id,)).fetchone()
+        if sub:
             try:
-                blockchain_engine.notarize_record(conn, sub_id)
-                block = conn.execute('SELECT * FROM blockchain_ledger WHERE submission_id = ?', (sub_id,)).fetchone()
+                blockchain_engine.notarize_record(
+                    conn,
+                    sub_id,
+                    action_type='INSERCAO_INICIAL',
+                    changes_summary='Notarização sob demanda via API',
+                    ip_origem=sub['ip_origem'] or get_client_ip(),
+                    host_url=request.host_url,
+                    upload_folder=app.config['UPLOAD_FOLDER']
+                )
+                history = blockchain_engine.get_submission_history(conn, sub_id)
             except Exception:
                 pass
     conn.close()
     
-    if not block:
+    if not history:
         return jsonify({'notarized': False, 'message': 'Ocorrência ainda não notarizada em blockchain.'}), 404
         
     return jsonify({
         'notarized': True,
-        'certificate': dict(block)
+        'certificate': history[-1],
+        'total_blocks': len(history),
+        'history': history
     })
 
 @app.route('/api/blockchain/verify/<int:sub_id>')
@@ -1424,6 +2177,10 @@ def curadoria_update(sub_id):
         return jsonify({'error': 'Unauthorized'}), 403
         
     f = request.form
+    client_ip = get_client_ip()
+    tel_contato = f.get('telefone_contato')
+    email_contato = f.get('email_contato')
+
     conn.execute('''
         UPDATE submissions SET 
             title = ?, description = ?, data_evento = ?, tipologia = ?, 
@@ -1452,7 +2209,9 @@ def curadoria_update(sub_id):
             amb_tipo_impacto = ?, amb_area_atingida = ?, amb_recursos_afetados = ?, amb_dano_biodiversidade = ?,
             amb_custo_mitigacao = ?, amb_tempo_recuperacao = ?, amb_status_recuperacao = ?,
             
-            midia_tipo = ?, midia_fonte = ?, midia_url = ?
+            midia_tipo = ?, midia_fonte = ?, midia_url = ?,
+            telefone_contato = COALESCE(NULLIF(?, ''), telefone_contato),
+            email_contato = COALESCE(NULLIF(?, ''), email_contato)
         WHERE id = ?
     ''', (
         f.get('title'), f.get('description'), f.get('data_evento'), f.get('tipologia'),
@@ -1482,7 +2241,7 @@ def curadoria_update(sub_id):
         f.get('amb_custo_mitigacao'), f.get('amb_tempo_recuperacao'), f.get('amb_status_recuperacao'),
         
         f.get('midia_tipo'), f.get('midia_fonte'), f.get('midia_url'),
-        
+        tel_contato, email_contato,
         sub_id
     ))
 
@@ -1530,9 +2289,33 @@ def curadoria_update(sub_id):
     ''', (media_json_str, first_file, sub_id))
 
     conn.commit()
+
+    # Notarização de Alteração no Blockchain (Gera NOVO bloco e NOVO QR Code exclusivo!)
+    try:
+        b_res = blockchain_engine.notarize_record(
+            conn,
+            sub_id,
+            curator_user=current_user,
+            action_type='ALTERACAO_DADOS',
+            changes_summary=f"Alteração de atributos na Curadoria por {current_user.nome_completo or current_user.username}",
+            ip_origem=client_ip,
+            host_url=request.host_url,
+            upload_folder=app.config['UPLOAD_FOLDER']
+        )
+        blk_msg = f" Notarizado novo Bloco #{b_res['block_index']} e novo QR Code gerado no Blockchain!" if b_res else ""
+    except Exception as e:
+        print("[!] Erro ao notarizar alteração:", e)
+        blk_msg = ""
+
     conn.close()
     
-    flash('Todas as informações do Dicionário de Dados foram atualizadas!', 'success')
+    try:
+        import threading
+        threading.Thread(target=sync_with_cloud, daemon=True).start()
+    except Exception:
+        pass
+        
+    flash(f'Todas as informações do Dicionário de Dados foram atualizadas!{blk_msg}', 'success')
     return redirect(url_for('curadoria'))
 
 @app.route('/curadoria/action/<int:sub_id>', methods=['POST'])
@@ -1589,11 +2372,21 @@ def curadoria_action(sub_id):
             conn.execute('INSERT INTO layers (name, filename, category, is_active) VALUES (?, ?, ?, 1)',
                          (submission['title'], submission['filename'], 'Contribuição de Usuários'))
                          
-        # Notarização Criptográfica em Blockchain (Cadeia de Custódia)
+        # Notarização Criptográfica de Aprovação no Blockchain (Gera novo bloco e novo QR Code)
         try:
-            b_res = blockchain_engine.notarize_record(conn, sub_id, current_user)
+            client_ip = get_client_ip()
+            b_res = blockchain_engine.notarize_record(
+                conn,
+                sub_id,
+                curator_user=current_user,
+                action_type='APROVACAO_CURADORIA',
+                changes_summary=f"Homologação técnica oficial na Curadoria. Parecer: {feedback or 'Aprovado sem ressalvas'}",
+                ip_origem=client_ip,
+                host_url=request.host_url,
+                upload_folder=app.config['UPLOAD_FOLDER']
+            )
             if b_res:
-                flash(f'Submissão #{sub_id} aprovada e NOTARIZADA no Blockchain Ledger (Bloco #{b_res["block_index"]})!', 'success')
+                flash(f'Submissão #{sub_id} aprovada e NOTARIZADA no Blockchain Ledger (Bloco #{b_res["block_index"]}) com novo QR Code gerado!', 'success')
             else:
                 flash('Submissão aprovada na Curadoria!', 'success')
         except Exception as b_err:
@@ -1606,6 +2399,13 @@ def curadoria_action(sub_id):
         flash('Submissão rejeitada.', 'warning')
         
     conn.close()
+    
+    try:
+        import threading
+        threading.Thread(target=sync_with_cloud, daemon=True).start()
+    except Exception:
+        pass
+        
     return redirect(url_for('curadoria'))
 
 @app.route('/curadoria/approve_all', methods=['POST'])
@@ -1620,11 +2420,14 @@ def curadoria_approve_all():
     conn = get_db_connection()
     u_sphere = (current_user.role_level or '').replace('agente_', 'admin_')
 
+    sub_ids_to_approve = []
     if is_admin_geral:
-        pending_layers = conn.execute("SELECT * FROM submissions WHERE status = 'pendente' AND submission_type = 'layer'").fetchall()
-        for layer_sub in pending_layers:
-            conn.execute('INSERT INTO layers (name, filename, category, is_active) VALUES (?, ?, ?, 1)',
-                         (layer_sub['title'], layer_sub['filename'], 'Contribuição de Usuários'))
+        rows = conn.execute("SELECT id, submission_type, title, filename FROM submissions WHERE status = 'pendente'").fetchall()
+        for r in rows:
+            sub_ids_to_approve.append(r['id'])
+            if r['submission_type'] == 'layer':
+                conn.execute('INSERT INTO layers (name, filename, category, is_active) VALUES (?, ?, ?, 1)',
+                             (r['title'], r['filename'], 'Contribuição de Usuários'))
 
         conn.execute('''
             UPDATE submissions 
@@ -1641,7 +2444,6 @@ def curadoria_approve_all():
             current_user.role_level or current_user.role
         ))
     else:
-        sub_ids_to_approve = []
         rows = conn.execute('''
             SELECT s.id, s.submission_type, s.title, s.filename, s.responsavel_nivel, u.role_level as u_role_level 
             FROM submissions s JOIN users u ON s.user_id = u.id 
@@ -1673,6 +2475,24 @@ def curadoria_approve_all():
             ] + sub_ids_to_approve)
 
     conn.commit()
+
+    # Notarizar em lote no Blockchain cada aprovação gerando seu novo QR Code
+    client_ip = get_client_ip()
+    for s_id in sub_ids_to_approve:
+        try:
+            blockchain_engine.notarize_record(
+                conn,
+                s_id,
+                curator_user=current_user,
+                action_type='APROVACAO_CURADORIA',
+                changes_summary='Aprovação em lote por Gestor de Curadoria',
+                ip_origem=client_ip,
+                host_url=request.host_url,
+                upload_folder=app.config['UPLOAD_FOLDER']
+            )
+        except Exception:
+            pass
+
     conn.close()
 
     flash('Submissões pendentes aprovadas com sucesso!', 'success')
@@ -1748,6 +2568,12 @@ def delete_occurrence(sub_id):
     conn.execute('DELETE FROM submissions WHERE id = ?', (sub_id,))
     conn.commit()
     conn.close()
+
+    try:
+        import threading
+        threading.Thread(target=sync_with_cloud, daemon=True).start()
+    except Exception:
+        pass
 
     flash(f'Ocorrência #{sub_id} removida do sistema com sucesso.', 'success')
     return redirect(request.referrer or url_for('index'))
@@ -1907,7 +2733,207 @@ def download_export():
         else: # geojson
             geojson_filepath = os.path.join(tmpdir, f"{filename_base}.geojson")
             gdf.to_file(geojson_filepath, driver='GeoJSON')
-            return send_from_directory(tmpdir, f"{filename_base}.geojson", as_attachment=True)
+# --- Sincronização Bidirecional Nuvem (Render / Web) <-> Desktop Local ---
+SYNC_SECRET = os.environ.get('MOVMASSA_SYNC_SECRET', 'movmassa_angra_sync_key_2026')
+CLOUD_SYNC_URL = os.environ.get('CLOUD_SYNC_URL', 'https://movmassa.onrender.com')
+
+def get_full_database_dump():
+    """Retorna todas as submissões, usuários e blocos do banco atual para sincronização."""
+    conn = get_db_connection()
+    try:
+        users = [dict(r) for r in conn.execute("SELECT * FROM users").fetchall()]
+        subs = [dict(r) for r in conn.execute("SELECT * FROM submissions").fetchall()]
+        ledger = [dict(r) for r in conn.execute("SELECT * FROM blockchain_ledger").fetchall()]
+        for s in subs:
+            for k, v in list(s.items()):
+                if hasattr(v, 'isoformat'):
+                    s[k] = v.isoformat()
+        for u in users:
+            for k, v in list(u.items()):
+                if hasattr(v, 'isoformat'):
+                    u[k] = v.isoformat()
+        for b in ledger:
+            for k, v in list(b.items()):
+                if hasattr(v, 'isoformat'):
+                    b[k] = v.isoformat()
+        return {'users': users, 'submissions': subs, 'ledger': ledger}
+    finally:
+        conn.close()
+
+def apply_database_sync(incoming_data):
+    """Aplica registros recebidos na base local/remota, fazendo upsert seguro."""
+    conn = get_db_connection()
+    is_pg = getattr(conn, 'is_postgres', False)
+    try:
+        # 1. Sincronizar usuários
+        for u in incoming_data.get('users', []):
+            username = u.get('username')
+            if not username:
+                continue
+            existing = conn.execute("SELECT id FROM users WHERE LOWER(username) = LOWER(?)", (username,)).fetchone()
+            if existing:
+                conn.execute("""
+                    UPDATE users SET 
+                        password_hash = COALESCE(?, password_hash),
+                        role = COALESCE(?, role),
+                        role_level = COALESCE(?, role_level),
+                        email = COALESCE(?, email),
+                        nome_completo = COALESCE(?, nome_completo),
+                        telefone = COALESCE(?, telefone),
+                        matricula = COALESCE(?, matricula),
+                        cpf = COALESCE(?, cpf),
+                        funcao = COALESCE(?, funcao)
+                    WHERE id = ?
+                """, (
+                    u.get('password_hash'), u.get('role'), u.get('role_level'),
+                    u.get('email'), u.get('nome_completo'), u.get('telefone'),
+                    u.get('matricula'), u.get('cpf'), u.get('funcao'), existing['id']
+                ))
+            else:
+                conn.execute("""
+                    INSERT INTO users (username, password_hash, role, role_level, email, nome_completo, telefone, matricula, cpf, funcao)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    username, u.get('password_hash') or '', u.get('role', 'user'), u.get('role_level', 'user'),
+                    u.get('email'), u.get('nome_completo'), u.get('telefone'), u.get('matricula'), u.get('cpf'), u.get('funcao', 'agente')
+                ))
+        conn.commit()
+
+        # 2. Sincronizar submissões
+        if is_pg:
+            cols_cur = conn.execute("SELECT column_name FROM information_schema.columns WHERE table_name = 'submissions'")
+            valid_cols = [r[0] for r in cols_cur.fetchall()]
+        else:
+            cols_cur = conn.execute("PRAGMA table_info(submissions)")
+            valid_cols = [r[1] for r in cols_cur.fetchall()]
+
+        for s in incoming_data.get('submissions', []):
+            sub_id = s.get('id')
+            if not sub_id:
+                continue
+            existing = conn.execute("SELECT id FROM submissions WHERE id = ?", (sub_id,)).fetchone()
+            
+            data_cols = [c for c in valid_cols if c in s and c != 'id']
+            if existing:
+                set_clause = ", ".join([f"{c} = ?" for c in data_cols])
+                values = [s[c] for c in data_cols] + [sub_id]
+                conn.execute(f"UPDATE submissions SET {set_clause} WHERE id = ?", values)
+            else:
+                all_cols = ['id'] + data_cols
+                placeholders = ", ".join(["?"] * len(all_cols))
+                values = [sub_id] + [s[c] for c in data_cols]
+                conn.execute(f"INSERT INTO submissions ({', '.join(all_cols)}) VALUES ({placeholders})", values)
+        conn.commit()
+
+        if is_pg:
+            try:
+                conn.execute("SELECT setval(pg_get_serial_sequence('submissions', 'id'), COALESCE((SELECT MAX(id) FROM submissions), 1));")
+                conn.commit()
+            except Exception:
+                pass
+
+        # 3. Sincronizar blockchain ledger
+        for b in incoming_data.get('ledger', []):
+            sub_id = b.get('submission_id')
+            blk_idx = b.get('block_index')
+            if not sub_id or not blk_idx:
+                continue
+            existing = conn.execute("SELECT id FROM blockchain_ledger WHERE submission_id = ? AND block_index = ?", (sub_id, blk_idx)).fetchone()
+            if not existing:
+                conn.execute("""
+                    INSERT INTO blockchain_ledger (
+                        submission_id, block_index, timestamp, data_hash, previous_hash, block_hash,
+                        curator_nome, curator_cpf, curator_matricula, curator_nivel,
+                        ip_origem, action_type, changes_summary, qrcode_filename
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    sub_id, blk_idx, b.get('timestamp'), b.get('data_hash'), b.get('previous_hash'), b.get('block_hash'),
+                    b.get('curator_nome'), b.get('curator_cpf'), b.get('curator_matricula'), b.get('curator_nivel'),
+                    b.get('ip_origem'), b.get('action_type'), b.get('changes_summary'), b.get('qrcode_filename')
+                ))
+            
+            # Garantir existência do arquivo QR Code local
+            qr_fn = b.get('qrcode_filename')
+            if qr_fn:
+                qr_path = os.path.join(app.config['UPLOAD_FOLDER'], qr_fn)
+                if not os.path.exists(qr_path):
+                    try:
+                        target_host = 'https://movmassa.onrender.com'
+                        tracking_url = f"{target_host.rstrip('/')}/blockchain/track/{sub_id}"
+                        blockchain_engine.generate_block_qrcode(tracking_url, qr_fn, app.config['UPLOAD_FOLDER'])
+                    except Exception as e:
+                        print("Aviso ao regenerar QR code:", e)
+        conn.commit()
+    finally:
+        conn.close()
+
+def sync_with_cloud():
+    """
+    Executa sincronização bidirecional entre a aplicação Desktop local e a Nuvem (Render).
+    """
+    import urllib.request
+    import json
+    
+    if DATABASE_URL and 'render' in DATABASE_URL:
+        return True, "Ambiente Nuvem ativo."
+        
+    sync_url = f"{CLOUD_SYNC_URL.rstrip('/')}/api/sync/exchange"
+    try:
+        local_dump = get_full_database_dump()
+        payload = {
+            'sync_token': SYNC_SECRET,
+            'users': local_dump['users'],
+            'submissions': local_dump['submissions'],
+            'ledger': local_dump['ledger']
+        }
+        json_bytes = json.dumps(payload, default=str).encode('utf-8')
+        req = urllib.request.Request(
+            sync_url,
+            data=json_bytes,
+            headers={
+                'Content-Type': 'application/json',
+                'User-Agent': 'MOVMASSA-Desktop-Sync/1.0'
+            },
+            method='POST'
+        )
+        with urllib.request.urlopen(req, timeout=12) as response:
+            if response.status == 200:
+                cloud_data = json.loads(response.read().decode('utf-8'))
+                if cloud_data.get('status') == 'ok':
+                    apply_database_sync(cloud_data)
+                    return True, f"Sincronização com a Nuvem concluída com sucesso! ({len(cloud_data.get('submissions', []))} ocorrências alinhadas)"
+        return False, "Resposta inválida do servidor na nuvem."
+    except Exception as e:
+        print("[!] Aviso na sincronização com a nuvem:", e)
+        return False, f"Falha de conexão com a nuvem: {e}"
+
+@app.route('/api/sync/exchange', methods=['POST'])
+def api_sync_exchange():
+    data = request.get_json(force=True, silent=True) or {}
+    token = data.get('sync_token')
+    if token != SYNC_SECRET and not (current_user.is_authenticated and getattr(current_user, 'role_level', '') == 'admin_geral'):
+        return jsonify({'error': 'Unauthorized sync token'}), 403
+        
+    try:
+        apply_database_sync(data)
+        current_state = get_full_database_dump()
+        return jsonify({
+            'status': 'ok',
+            'users': current_state['users'],
+            'submissions': current_state['submissions'],
+            'ledger': current_state['ledger']
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/sync_now', methods=['GET', 'POST'])
+def sync_now():
+    success, msg = sync_with_cloud()
+    if success:
+        flash(msg, 'success')
+    else:
+        flash(msg, 'warning')
+    return redirect(request.referrer or url_for('index'))
 
 # --- Admin & Gestão de Agentes / Funcionários ---
 

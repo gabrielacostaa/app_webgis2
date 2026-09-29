@@ -26,6 +26,9 @@
                         </button>
                     </form>
                     {% endif %}
+                    <a href="{{ url_for('sync_now') }}" class="btn btn-warning rounded-pill px-3.5 py-2 fw-bold text-dark d-flex align-items-center gap-2 shadow-sm" title="Sincronizar com a Nuvem (Web)">
+                        <i class="bi bi-arrow-repeat fs-5"></i> Sincronizar Nuvem
+                    </a>
                     <button type="button" class="btn btn-pro-emerald rounded-pill px-3.5 py-2 fw-bold d-flex align-items-center gap-2 shadow-sm" data-bs-toggle="modal" data-bs-target="#modalBulkShapefileCuradoria">
                         <i class="bi bi-file-earmark-zip-fill"></i> Upload Massivo (Shapefile .zip)
                     </button>
@@ -145,6 +148,19 @@
                                     <div class="text-muted" style="font-size: 10px;">
                                         Matrícula: {{ sub.responsavel_matricula or 'N/A' }} | CPF: {{ sub.responsavel_cpf or 'N/A' }}
                                     </div>
+                                    {% if sub.telefone_contato %}
+                                    <div class="text-dark fw-bold" style="font-size: 10px;">
+                                        <i class="bi bi-telephone text-primary me-1"></i>{{ sub.telefone_contato }}
+                                    </div>
+                                    {% endif %}
+                                    {% if sub.email_contato %}
+                                    <div class="text-dark" style="font-size: 10px;">
+                                        <i class="bi bi-envelope text-primary me-1"></i>{{ sub.email_contato }}
+                                    </div>
+                                    {% endif %}
+                                    <div class="text-secondary font-monospace" style="font-size: 9.5px;">
+                                        <i class="bi bi-hdd-network me-1"></i>IP: {{ sub.ip_origem or '127.0.0.1' }}
+                                    </div>
                                 </td>
                                 <td>
                                     <div class="fw-bold text-dark">{{ sub.title }}</div>
@@ -185,6 +201,11 @@
                                 </td>
                                 <td class="pe-4 text-end">
                                     <div class="d-flex justify-content-end align-items-center gap-1 flex-wrap">
+                                        <!-- Botão QR Code Blockchain & Linha do Tempo -->
+                                        <a href="{{ url_for('blockchain_track_view', sub_id=sub.id) }}" target="_blank" class="btn btn-sm btn-outline-dark py-1 px-2 rounded-3 fw-semibold shadow-xs" title="Rastrear Blockchain & QR Code">
+                                            <i class="bi bi-qr-code me-1 text-primary"></i> QR Code
+                                        </a>
+
                                         <!-- Botão Relatório PDF -->
                                         {% if sub.submission_type == 'point' %}
                                         <a href="{{ url_for('occurrence_pdf', point_id=sub.id) }}" target="_blank" class="btn btn-sm btn-primary py-1 px-2 rounded-3 fw-semibold text-white" title="Baixar Relatório PDF">
@@ -262,6 +283,9 @@
                                                             <div class="col-md-4"><label class="form-label small fw-bold">Zona</label><input type="text" name="zona" class="form-control form-control-sm rounded-3" value="{{ sub.zona or 'Periourbana / Encosta' }}"></div>
                                                             <div class="col-md-6"><label class="form-label small fw-bold">Latitude (WGS84)</label><input type="text" name="lat" class="form-control form-control-sm rounded-3" value="{{ sub.lat or '' }}"></div>
                                                             <div class="col-md-6"><label class="form-label small fw-bold">Longitude (WGS84)</label><input type="text" name="lng" class="form-control form-control-sm rounded-3" value="{{ sub.lng or '' }}"></div>
+                                                            <div class="col-md-4"><label class="form-label small fw-bold">Tel/Celular (DDD)</label><input type="text" name="telefone_contato" class="form-control form-control-sm rounded-3" value="{{ sub.telefone_contato or '' }}"></div>
+                                                            <div class="col-md-4"><label class="form-label small fw-bold">E-mail de Contato</label><input type="email" name="email_contato" class="form-control form-control-sm rounded-3" value="{{ sub.email_contato or '' }}"></div>
+                                                            <div class="col-md-4"><label class="form-label small fw-bold">IP de Origem (Auditado)</label><input type="text" class="form-control form-control-sm rounded-3 bg-light" value="{{ sub.ip_origem or '127.0.0.1' }}" readonly></div>
                                                             <div class="col-12"><label class="form-label small fw-bold">Descrição Completa</label><textarea name="description" class="form-control form-control-sm rounded-3" rows="3">{{ sub.description or '' }}</textarea></div>
                                                         </div>
                                                     </div>

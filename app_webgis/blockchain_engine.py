@@ -1,49 +1,74 @@
 """
-MOVMASSA WebGIS - Motor Criptográfico de Blockchain e Cadeia de Custódia
-Implementação de Notarização Digital e Rastreabilidade Espacial para Gestão de Riscos e Defesa Civil
+MOVMASSA WebGIS - Motor Criptográfico de Blockchain, Cadeia de Custódia e QR Code
+Implementação de Notarização Digital, Rastreabilidade Temporal de Alterações e Prova Criptográfica
 """
 import hashlib
 import json
 import datetime
+import os
+import qrcode
 
 GENESIS_HASH = "0000000000000000000000000000000000000000000000000000000000000000"
 
 def calculate_data_hash(record_dict):
     """
     Calcula o hash SHA-256 canônico dos dados da ocorrência.
-    Garante que qualquer alteração de coordenadas, solo, declividade, vítimas ou mídias altere o hash.
+    Qualquer alteração de coordenadas, solo, declividade, vítimas, contatos ou mídias altera o hash.
     """
-    # Seleção de campos canônicos essenciais
     canonical_keys = [
         'id', 'title', 'data_evento', 'lat', 'lng', 'municipio', 'uf', 'bairro',
         'tipologia', 'zona', 'ped_classe_solo', 'ped_textura', 'ped_profundidade',
         'geo_declividade', 'geo_altitude', 'geo_forma_terreno', 'geol_tipo_rocha',
         'clima_precipitacao_evento', 'clima_precipitacao_mensal',
-        'n_mortos', 'n_feridos', 'soc_n_familias', 'econ_custo_total', 'amb_tipo_impacto'
+        'n_mortos', 'n_feridos', 'soc_n_familias', 'econ_custo_total', 'amb_tipo_impacto',
+        'telefone_contato', 'email_contato', 'ip_origem'
     ]
     
     clean_dict = {}
     for k in canonical_keys:
         val = record_dict.get(k)
-        clean_dict[k] = str(val) if val is not None else ""
+        clean_dict[k] = str(val).strip() if val is not None else ""
         
     serialized = json.dumps(clean_dict, sort_keys=True, ensure_ascii=False)
     return hashlib.sha256(serialized.encode('utf-8')).hexdigest()
 
-def calculate_block_hash(block_index, timestamp_iso, previous_hash, data_hash, curator_info):
+def calculate_block_hash(block_index, timestamp_iso, previous_hash, data_hash, curator_info, ip_origem="", action_type=""):
     """
     Gera o hash do bloco encadeado (Block Hash).
-    Combina índice, carimbo de tempo, hash do bloco anterior, hash dos dados e dados do curador.
+    Combina índice, carimbo de tempo, hash anterior, hash dos dados, curador, IP e tipo de ação.
     """
-    block_string = f"{block_index}|{timestamp_iso}|{previous_hash}|{data_hash}|{json.dumps(curator_info, sort_keys=True)}"
+    block_string = f"{block_index}|{timestamp_iso}|{previous_hash}|{data_hash}|{json.dumps(curator_info, sort_keys=True)}|{ip_origem}|{action_type}"
     return hashlib.sha256(block_string.encode('utf-8')).hexdigest()
 
-def notarize_record(conn, submission_id, curator_user=None):
+def generate_block_qrcode(tracking_url, filename, upload_folder):
     """
-    Registra e encadeia uma ocorrência no Blockchain Ledger do MOVMASSA.
-    Retorna o dicionário com os dados do bloco criado.
+    Gera imagem PNG do QR Code apontando para o link público de auditoria e rastreamento.
     """
-    # 1. Obter dados da ocorrência
+    try:
+        os.makedirs(upload_folder, exist_ok=True)
+        filepath = os.path.join(upload_folder, filename)
+        
+        qr = qrcode.QRCode(
+            version=1,
+            error_correction=qrcode.constants.ERROR_CORRECT_M,
+            box_size=8,
+            border=2,
+        )
+        qr.add_data(tracking_url)
+        qr.make(fit=True)
+        
+        img = qr.make_image(fill_color="#0F172A", back_color="#FFFFFF")
+        img.save(filepath)
+        return filename
+    except Exception as e:
+        print(f"[!] Erro ao gerar QR Code ({filename}): {e}")
+        return ""
+
+def notarize_record(conn, submission_id, curator_user=None, action_type='INSERCAO_INICIAL', changes_summary='', ip_origem=None, host_url='http://127.0.0.1:5000', upload_folder='static/uploads'):
+    """
+    Registra um novo bloco histórico no Blockchain Ledger do MOVMASSA.
+    A cada inserção e a cada alteração, gera um novo bloco encadeado e um novo QR Code!
+    """
     row = conn.execute("SELECT * FROM submissions WHERE id = ?", (submission_id,)).fetchone()
     if not row:
         return None
@@ -51,11 +76,16 @@ def notarize_record(conn, submission_id, curator_user=None):
     rec_dict = dict(row)
     data_hash = calculate_data_hash(rec_dict)
     
-    # 2. Obter último bloco da cadeia para encadeamento
-    last_block = conn.execute("SELECT block_index, block_hash FROM blockchain_ledger ORDER BY block_index DESC LIMIT 1").fetchone()
+    # 1. Obter o último bloco específico desta ocorrência para formar o encadeamento
+    last_block = conn.execute("""
+        SELECT block_index, block_hash 
+        FROM blockchain_ledger 
+        WHERE submission_id = ? 
+        ORDER BY block_index DESC LIMIT 1
+    """, (submission_id,)).fetchone()
     
     if last_block:
-        block_index = last_block['block_index'] + 1
+        block_index = int(last_block['block_index']) + 1
         previous_hash = last_block['block_hash']
     else:
         block_index = 1
@@ -63,10 +93,13 @@ def notarize_record(conn, submission_id, curator_user=None):
         
     timestamp_iso = datetime.datetime.utcnow().isoformat() + "Z"
     
-    curator_nome = (curator_user.nome_completo if curator_user and hasattr(curator_user, 'nome_completo') else None) or rec_dict.get('responsavel_nome') or 'Curadoria Técnica Defesa Civil'
+    # 2. Informações de autoria e IP
+    curator_nome = (curator_user.nome_completo if curator_user and hasattr(curator_user, 'nome_completo') else None) or rec_dict.get('responsavel_nome') or 'Declarante Comunitário'
     curator_cpf = (curator_user.cpf if curator_user and hasattr(curator_user, 'cpf') else None) or rec_dict.get('responsavel_cpf') or '000.000.000-00'
     curator_matricula = (curator_user.matricula if curator_user and hasattr(curator_user, 'matricula') else None) or rec_dict.get('responsavel_matricula') or 'DEF-ANG-001'
-    curator_nivel = (curator_user.role_level if curator_user and hasattr(curator_user, 'role_level') else None) or rec_dict.get('responsavel_nivel') or 'admin_geral'
+    curator_nivel = (curator_user.role_level if curator_user and hasattr(curator_user, 'role_level') else None) or rec_dict.get('responsavel_nivel') or 'usuario_comum'
+    
+    ip_addr = ip_origem or rec_dict.get('ip_origem') or '127.0.0.1'
     
     curator_info = {
         'nome': curator_nome,
@@ -75,25 +108,37 @@ def notarize_record(conn, submission_id, curator_user=None):
         'nivel': curator_nivel
     }
     
-    block_hash = calculate_block_hash(block_index, timestamp_iso, previous_hash, data_hash, curator_info)
+    block_hash = calculate_block_hash(block_index, timestamp_iso, previous_hash, data_hash, curator_info, ip_addr, action_type)
     
-    # 3. Salvar ou atualizar no Blockchain Ledger
-    existing = conn.execute("SELECT id FROM blockchain_ledger WHERE submission_id = ?", (submission_id,)).fetchone()
-    if existing:
-        conn.execute('''
-            UPDATE blockchain_ledger SET 
-                timestamp = ?, data_hash = ?, previous_hash = ?, block_hash = ?,
-                curator_nome = ?, curator_cpf = ?, curator_matricula = ?, curator_nivel = ?
-            WHERE submission_id = ?
-        ''', (timestamp_iso, data_hash, previous_hash, block_hash, curator_nome, curator_cpf, curator_matricula, curator_nivel, submission_id))
-    else:
-        conn.execute('''
-            INSERT INTO blockchain_ledger (
-                submission_id, block_index, timestamp, data_hash, previous_hash, block_hash,
-                curator_nome, curator_cpf, curator_matricula, curator_nivel
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (submission_id, block_index, timestamp_iso, data_hash, previous_hash, block_hash, curator_nome, curator_cpf, curator_matricula, curator_nivel))
-        
+    # 3. Geração do QR Code exclusivo para este bloco/versão
+    qr_filename = f"qr_sub_{submission_id}_blk_{block_index}.png"
+    target_host = host_url
+    if not host_url or '127.0.0.1' in host_url or 'localhost' in host_url:
+        target_host = os.environ.get('CLOUD_TRACKING_URL', 'https://movmassa.onrender.com')
+    tracking_url = f"{target_host.rstrip('/')}/blockchain/track/{submission_id}"
+    generate_block_qrcode(tracking_url, qr_filename, upload_folder)
+    
+    # 4. Inserção do novo bloco histórico na tabela blockchain_ledger
+    conn.execute('''
+        INSERT INTO blockchain_ledger (
+            submission_id, block_index, timestamp, data_hash, previous_hash, block_hash,
+            curator_nome, curator_cpf, curator_matricula, curator_nivel,
+            ip_origem, action_type, changes_summary, qrcode_filename
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (
+        submission_id, block_index, timestamp_iso, data_hash, previous_hash, block_hash,
+        curator_nome, curator_cpf, curator_matricula, curator_nivel,
+        ip_addr, action_type, changes_summary or 'Atualização de ocorrência', qr_filename
+    ))
+    
+    # 5. Atualizar na tabela submissions o ponteiro para o QR Code e IP mais recente
+    conn.execute('''
+        UPDATE submissions 
+        SET qrcode_filename = ?,
+            ip_origem = COALESCE(NULLIF(ip_origem, ''), ?)
+        WHERE id = ?
+    ''', (qr_filename, ip_addr, submission_id))
+    
     conn.commit()
     
     return {
@@ -103,44 +148,71 @@ def notarize_record(conn, submission_id, curator_user=None):
         'data_hash': data_hash,
         'previous_hash': previous_hash,
         'block_hash': block_hash,
-        'curator_info': curator_info
+        'curator_info': curator_info,
+        'ip_origem': ip_addr,
+        'action_type': action_type,
+        'changes_summary': changes_summary,
+        'qrcode_filename': qr_filename,
+        'tracking_url': tracking_url
     }
+
+def get_submission_history(conn, submission_id):
+    """
+    Retorna a linha do tempo completa de todos os blocos/alterações registrados para uma ocorrência.
+    """
+    rows = conn.execute("""
+        SELECT * FROM blockchain_ledger 
+        WHERE submission_id = ? 
+        ORDER BY block_index ASC
+    """, (submission_id,)).fetchall()
+    return [dict(r) for r in rows]
 
 def verify_record_integrity(conn, submission_id):
     """
-    Verifica se o registro atual no banco coincide com a assinatura e o hash gravados no Blockchain.
-    Detecta qualquer adulteração posterior.
+    Verifica se o registro atual no banco coincide com a assinatura gravada no Blockchain
+    e valida o encadeamento de todos os blocos históricos.
     """
     row_sub = conn.execute("SELECT * FROM submissions WHERE id = ?", (submission_id,)).fetchone()
-    row_block = conn.execute("SELECT * FROM blockchain_ledger WHERE submission_id = ?", (submission_id,)).fetchone()
+    history = get_submission_history(conn, submission_id)
     
-    if not row_sub or not row_block:
-        return {'status': 'not_notarized', 'valid': False, 'message': 'Registro não notarizado em blockchain.'}
+    if not row_sub or not history:
+        return {'status': 'not_notarized', 'valid': False, 'message': 'Registro não notarizado no Blockchain.'}
         
     rec_dict = dict(row_sub)
-    block_dict = dict(row_block)
+    latest_block = history[-1]
     
     current_data_hash = calculate_data_hash(rec_dict)
     
-    if current_data_hash == block_dict['data_hash']:
+    # 1. Valida hash dos dados atuais contra o último bloco
+    data_matches = (current_data_hash == latest_block['data_hash'])
+    
+    # 2. Valida encadeamento de blocos anteriores
+    chain_valid = True
+    for i in range(1, len(history)):
+        if history[i]['previous_hash'] != history[i-1]['block_hash']:
+            chain_valid = False
+            break
+            
+    is_fully_valid = data_matches and chain_valid
+    
+    if is_fully_valid:
         return {
             'status': 'verified',
             'valid': True,
-            'message': 'Autenticidade e integridade criptográfica verificadas com sucesso. Documento 100% íntegro.',
-            'block_index': block_dict['block_index'],
-            'block_hash': block_dict['block_hash'],
-            'data_hash': block_dict['data_hash'],
-            'previous_hash': block_dict['previous_hash'],
-            'timestamp': block_dict['timestamp'],
-            'curator_nome': block_dict['curator_nome'],
-            'curator_nivel': block_dict['curator_nivel']
+            'message': 'Autenticidade e integridade criptográfica 100% verificadas. Todos os blocos encadeados e dados íntegros.',
+            'total_blocks': len(history),
+            'latest_block': latest_block,
+            'history': history
         }
     else:
         return {
             'status': 'tampered',
             'valid': False,
-            'message': 'ALERTA: Inconsistência detectada! Os dados atuais no banco de dados não coincidem com o hash imutável registrado no Blockchain.',
+            'message': 'ALERTA DE SEGURANÇA: Inconsistência detectada! Os dados atuais ou a cadeia de blocos foram adulterados fora do fluxo oficial.',
             'current_data_hash': current_data_hash,
-            'original_data_hash': block_dict['data_hash'],
-            'block_hash': block_dict['block_hash']
+            'recorded_data_hash': latest_block['data_hash'],
+            'chain_valid': chain_valid,
+            'total_blocks': len(history),
+            'latest_block': latest_block,
+            'history': history
         }

@@ -331,10 +331,27 @@ document.addEventListener("DOMContentLoaded", function() {
                                                  <span class="badge bg-danger mb-2">${p.tipologia || 'Deslizamento de Encosta'}</span>
                                                  
                                                  <div class="p-2 mb-2 rounded bg-light border shadow-sm" style="font-size: 10px;">
-                                                     <div class="fw-bold text-dark mb-1">📋 Responsável Técnico:</div>
+                                                     <div class="fw-bold text-dark mb-1">📋 Responsável / Declarante:</div>
                                                      <div><strong>Nome:</strong> ${p.responsavel_nome || 'Defesa Civil'}</div>
                                                      <div><strong>Atuação:</strong> <span class="badge bg-dark">${levelName}</span></div>
-                                                     <div><strong>CPF:</strong> ${p.responsavel_cpf || '***.***.***-**'} | <strong>Matrícula:</strong> ${p.responsavel_matricula || 'N/A'}</div>
+                                                     ${p.responsavel_cpf && p.responsavel_cpf !== 'N/A' ? `<div><strong>CPF:</strong> ${p.responsavel_cpf}</div>` : ''}
+                                                     ${p.telefone_contato ? `<div><strong>Tel/Celular:</strong> ${p.telefone_contato}</div>` : ''}
+                                                     ${p.email_contato ? `<div><strong>E-mail:</strong> ${p.email_contato}</div>` : ''}
+                                                     <div class="mt-1"><span class="badge bg-secondary font-monospace"><i class="bi bi-hdd-network"></i> IP: ${p.ip_origem || '127.0.0.1'}</span></div>
+                                                 </div>
+
+                                                 <!-- Bloco QR Code & Auditoria Blockchain -->
+                                                 <div class="p-2 mb-2 rounded bg-white border border-primary-subtle shadow-sm">
+                                                     <div class="d-flex align-items-center gap-2">
+                                                         ${(p.qrcode_url || p.qrcode_filename) ? `<img src="${p.qrcode_url || '/api/layer/' + p.qrcode_filename}" width="64" height="64" class="rounded border p-0.5 bg-white" alt="QR Code">` : '<div class="badge bg-light text-dark p-2 border">QR Code</div>'}
+                                                         <div style="font-size: 10px;">
+                                                             <div class="fw-bold text-primary"><i class="bi bi-shield-check text-success"></i> Blockchain Auditável</div>
+                                                             <div class="text-muted" style="font-size: 9px;">Rastreie inserção e todas as alterações efetuadas.</div>
+                                                             <a href="/blockchain/track/${p.id}" target="_blank" class="btn btn-sm btn-outline-primary py-0.5 px-2 mt-1 fw-bold" style="font-size: 9.5px;">
+                                                                 <i class="bi bi-qr-code me-1"></i> Rastrear Histórico
+                                                             </a>
+                                                         </div>
+                                                     </div>
                                                  </div>
 
                                                  <!-- Botão Gerar / Pré-visualizar Relatório PDF -->
@@ -410,6 +427,10 @@ document.addEventListener("DOMContentLoaded", function() {
                     }
                 }
             });
+
+            // Ativa automaticamente a Camada de Curadoria ao carregar a página
+            curadoriaInput.checked = true;
+            curadoriaInput.dispatchEvent(new Event('change'));
 
             layers.forEach(layerData => {
                 const filename = (layerData.filename || '').toLowerCase();

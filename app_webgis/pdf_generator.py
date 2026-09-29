@@ -342,6 +342,16 @@ def generate_occurrence_pdf(data, output_path, upload_folder="static/uploads"):
     b_index = data.get('block_index') or 1
     b_time = data.get('blockchain_timestamp') or datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%SZ")
 
+    qr_cell = None
+    qr_file = data.get('qrcode_filename')
+    if qr_file:
+        qr_path = os.path.join(upload_folder, qr_file)
+        if os.path.exists(qr_path):
+            try:
+                qr_cell = Image(qr_path, width=1.1*inch, height=1.1*inch)
+            except Exception as e:
+                print(f"Erro ao carregar QR Code no PDF: {e}")
+
     blockchain_table_data = [
         [
             Paragraph("<b>🛡️ STATUS DA CUSTÓDIA:</b>", cell_bold),
@@ -349,11 +359,15 @@ def generate_occurrence_pdf(data, output_path, upload_folder="static/uploads"):
         ],
         [
             Paragraph("<b>Índice do Bloco / Ledger:</b>", cell_bold),
-            Paragraph(f"Bloco #{b_index} &mdash; Livro-Razão MOVMASSA Chain", cell_normal)
+            Paragraph(f"Bloco #{b_index} &mdash; Livro-Razão MOVMASSA Chain (Histórico de Alterações)", cell_normal)
         ],
         [
             Paragraph("<b>Carimbo de Tempo Inviolável (Timestamp):</b>", cell_bold),
             Paragraph(f"{b_time}", cell_normal)
+        ],
+        [
+            Paragraph("<b>Endereço IP de Auditoria:</b>", cell_bold),
+            Paragraph(f"<font name='Courier' size='8'><b>{data.get('ip_origem') or '127.0.0.1'}</b></font> &bull; Rastreabilidade e Prevenção", cell_normal)
         ],
         [
             Paragraph("<b>Hash SHA-256 do Registro (Payload):</b>", cell_bold),
@@ -366,6 +380,10 @@ def generate_occurrence_pdf(data, output_path, upload_folder="static/uploads"):
         [
             Paragraph("<b>Hash do Bloco Anterior (Chain Link):</b>", cell_bold),
             Paragraph(f"<font name='Courier' size='7'>{prev_hash}</font>", cell_normal)
+        ],
+        [
+            Paragraph("<b>QR Code Oficial de Rastreamento:</b>", cell_bold),
+            qr_cell if qr_cell else Paragraph("<i>QR Code de auditoria digital sincronizado na plataforma web.</i>", cell_normal)
         ],
         [
             Paragraph("<b>Curador / Validador Responsável:</b>", cell_bold),

@@ -160,6 +160,44 @@
                         <label class="form-label fw-semibold small">Descrição Técnica Breve</label>
                         <textarea name="description" class="form-control form-control-sm rounded-3" rows="2" placeholder="Observações de solo, umidade e extensão..."></textarea>
                     </div>
+                    <!-- Identificação Obrigatória (Usuário Comum / Comunidade) -->
+                    <div class="p-3 mb-3 rounded-3 border bg-light shadow-xs">
+                        <div class="d-flex align-items-center justify-content-between mb-2">
+                            <span class="fw-bold small text-dark d-flex align-items-center gap-1.5">
+                                <i class="bi bi-person-badge-fill text-primary"></i> Identificação do Declarante
+                            </span>
+                            <span class="badge bg-danger-subtle text-danger" style="font-size: 10px;">Obrigatório p/ Validação</span>
+                        </div>
+                        <div class="row g-2">
+                            <div class="col-md-6 mb-1">
+                                <label class="form-label fw-semibold small mb-1">Telefone com DDD (Celular) <span class="text-danger">*</span></label>
+                                <input type="tel" name="telefone_contato" id="input_telefone_contato" class="form-control form-control-sm rounded-3" 
+                                       placeholder="(24) 99999-9999" 
+                                       {% if current_user.is_authenticated and current_user.telefone %}value="{{ current_user.telefone }}"{% endif %} required>
+                                <div class="form-text" style="font-size: 10px;">Ex: (24) 98888-7777</div>
+                            </div>
+                            <div class="col-md-6 mb-1">
+                                <label class="form-label fw-semibold small mb-1">E-mail de Contato <span class="text-danger">*</span></label>
+                                <input type="email" name="email_contato" id="input_email_contato" class="form-control form-control-sm rounded-3" 
+                                       placeholder="seuemail@exemplo.com" 
+                                       {% if current_user.is_authenticated and current_user.email %}value="{{ current_user.email }}"{% endif %} required>
+                                <div class="form-text" style="font-size: 10px;">Para validação da Defesa Civil</div>
+                            </div>
+                            <div class="col-12 mb-1">
+                                <label class="form-label fw-semibold small mb-1">Nome Completo</label>
+                                <input type="text" name="responsavel_nome" class="form-control form-control-sm rounded-3" 
+                                       placeholder="Seu nome completo" 
+                                       {% if current_user.is_authenticated and current_user.nome_completo %}value="{{ current_user.nome_completo }}"{% endif %}>
+                            </div>
+                        </div>
+                        <div class="mt-2 p-2 rounded bg-danger-subtle border border-danger-subtle d-flex align-items-center gap-2" style="font-size: 10px;">
+                            <i class="bi bi-shield-lock-fill text-danger fs-6 flex-shrink-0"></i>
+                            <span class="text-danger fw-semibold">
+                                Segurança e Auditoria: O seu endereço IP será capturado e registrado criptograficamente no Blockchain para garantir a veracidade dos dados e coibir trotes ou comunicações criminosas (Art. 340 do Código Penal).
+                            </span>
+                        </div>
+                    </div>
+
                     <div class="mb-3">
                         <label class="form-label fw-semibold small">Coordenadas Geográficas (WGS84)</label>
                         <div class="input-group input-group-sm mb-2">
@@ -301,6 +339,25 @@ function getLocation() {
         alert("Geolocalização não é suportada por este navegador.");
     }
 }
+
+document.addEventListener('DOMContentLoaded', function() {
+    var telInput = document.getElementById('input_telefone_contato');
+    if (telInput) {
+        telInput.addEventListener('input', function(e) {
+            var v = e.target.value.replace(/\D/g, '');
+            if (v.length > 11) v = v.slice(0, 11);
+            if (v.length > 10) {
+                e.target.value = '(' + v.slice(0, 2) + ') ' + v.slice(2, 7) + '-' + v.slice(7);
+            } else if (v.length > 6) {
+                e.target.value = '(' + v.slice(0, 2) + ') ' + v.slice(2, 6) + '-' + v.slice(6);
+            } else if (v.length > 2) {
+                e.target.value = '(' + v.slice(0, 2) + ') ' + v.slice(2);
+            } else if (v.length > 0) {
+                e.target.value = '(' + v;
+            }
+        });
+    }
+});
 </script>
 <script src="{{ url_for('static', filename='js/map.js') }}"></script>
 {% endblock %}

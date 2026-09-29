@@ -1,0 +1,229 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container py-3" style="max-width: 1050px;">
+    <!-- Breadcrumb & Back -->
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <a href="{{ url_for('index') }}" class="btn btn-outline-secondary btn-sm rounded-pill px-3 shadow-sm">
+            <i class="bi bi-arrow-left me-1"></i> Voltar ao Mapa
+        </a>
+        <div class="d-flex gap-2">
+            {% if current_user.is_authenticated %}
+            <a href="{{ url_for('curadoria') }}" class="btn btn-outline-primary btn-sm rounded-pill px-3 shadow-sm">
+                <i class="bi bi-shield-check me-1"></i> Painel de Curadoria
+            </a>
+            {% endif %}
+            <a href="{{ url_for('occurrence_pdf', point_id=sub.id) }}" target="_blank" class="btn btn-primary btn-sm rounded-pill px-3 shadow-sm fw-bold">
+                <i class="bi bi-file-earmark-pdf me-1"></i> Baixar Relatório PDF
+            </a>
+        </div>
+    </div>
+
+    <!-- Header Card -->
+    <div class="card border-0 shadow-sm rounded-4 overflow-hidden mb-4">
+        <div class="card-body bg-dark text-white p-4">
+            <div class="row align-items-center">
+                <div class="col-lg-8">
+                    <div class="d-flex align-items-center gap-2 mb-2">
+                        <span class="badge bg-primary px-2.5 py-1">Ocorrência #{{ sub.id }}</span>
+                        <span class="badge bg-info text-dark px-2.5 py-1">{{ sub.municipio or 'Angra dos Reis' }} - {{ sub.uf or 'RJ' }}</span>
+                        <span class="badge {% if sub.status == 'aprovado' %}bg-success{% else %}bg-warning text-dark{% endif %} px-2.5 py-1">
+                            Status: {{ (sub.status or 'pendente') | upper }}
+                        </span>
+                    </div>
+                    <h3 class="fw-bold mb-1">{{ sub.title }}</h3>
+                    <p class="text-light opacity-75 small mb-3">
+                        <i class="bi bi-geo-alt-fill text-danger me-1"></i> Bairro: <strong>{{ sub.bairro or 'Região Central' }}</strong> | 
+                        Coordenadas: <code>{{ sub.lat }}, {{ sub.lng }}</code> | 
+                        Data: <strong>{{ sub.data_evento or 'Data não especificada' }}</strong>
+                    </p>
+
+                    <!-- Selo de Verificação -->
+                    <div class="d-inline-flex align-items-center gap-2 px-3 py-2 rounded-3 {% if verification.valid %}bg-success-subtle border border-success text-success-emphasis{% else %}bg-danger-subtle border border-danger text-danger-emphasis{% endif %}">
+                        {% if verification.valid %}
+                        <i class="bi bi-patch-check-fill fs-5 text-success"></i>
+                        <div>
+                            <div class="fw-bold" style="font-size: 13px;">AUTENTICIDADE CRIPTOGRÁFICA VERIFICADA</div>
+                            <div style="font-size: 11px;">Cadeia de custódia íntegra com {{ history | length }} bloco(s) encadeado(s). Algoritmo SHA-256 imutável.</div>
+                        </div>
+                        {% else %}
+                        <i class="bi bi-exclamation-triangle-fill fs-5 text-danger"></i>
+                        <div>
+                            <div class="fw-bold" style="font-size: 13px;">ALERTA DE SEGURANÇA: INCONSISTÊNCIA</div>
+                            <div style="font-size: 11px;">{{ verification.message }}</div>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- QR Code Destaque -->
+                <div class="col-lg-4 text-center mt-3 mt-lg-0 border-start-lg border-secondary-subtle ps-lg-4">
+                    {% set qr_img = sub.qrcode_filename or (latest_block.qrcode_filename if latest_block else '') %}
+                    {% if qr_img %}
+                    <div class="d-inline-block p-2 bg-white rounded-3 shadow-sm border mb-2">
+                        <img src="{{ url_for('serve_layer', filename=qr_img) }}" width="140" height="140" alt="QR Code de Rastreamento" class="rounded">
+                    </div>
+                    <div class="small text-light opacity-75 fw-semibold" style="font-size: 11px;">
+                        <i class="bi bi-qr-code me-1"></i> QR Code Oficial de Rastreamento
+                    </div>
+                    <div class="text-white-50" style="font-size: 10px;">
+                        Escaneie com a câmera do celular para auditar em qualquer lugar
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-4 mb-4">
+        <!-- Metadados de Origem & Segurança do Declarante -->
+        <div class="col-md-6">
+            <div class="card border-0 shadow-sm rounded-4 h-100 p-3 bg-white">
+                <div class="d-flex align-items-center gap-2 mb-3 pb-2 border-bottom">
+                    <i class="bi bi-shield-lock-fill text-primary fs-5"></i>
+                    <h6 class="fw-bold mb-0 text-dark">Origem, Auditoria & Prevenção</h6>
+                </div>
+                <ul class="list-group list-group-flush small">
+                    <li class="list-group-item px-0 d-flex justify-content-between align-items-center">
+                        <span class="text-secondary fw-semibold">Endereço IP de Registro:</span>
+                        <span class="badge bg-secondary font-monospace"><i class="bi bi-hdd-network me-1"></i>{{ sub.ip_origem or '127.0.0.1' }}</span>
+                    </li>
+                    <li class="list-group-item px-0 d-flex justify-content-between align-items-center">
+                        <span class="text-secondary fw-semibold">Declarante / Responsável:</span>
+                        <span class="fw-bold text-dark">{{ sub.responsavel_nome or 'Cidadão Comunitário' }}</span>
+                    </li>
+                    <li class="list-group-item px-0 d-flex justify-content-between align-items-center">
+                        <span class="text-secondary fw-semibold">Telefone com DDD (Celular):</span>
+                        <span class="fw-bold text-dark"><i class="bi bi-telephone text-primary me-1"></i>{{ sub.telefone_contato or 'Não informado' }}</span>
+                    </li>
+                    <li class="list-group-item px-0 d-flex justify-content-between align-items-center">
+                        <span class="text-secondary fw-semibold">E-mail do Declarante:</span>
+                        <span class="fw-bold text-dark"><i class="bi bi-envelope text-primary me-1"></i>{{ sub.email_contato or 'Não informado' }}</span>
+                    </li>
+                    <li class="list-group-item px-0 d-flex justify-content-between align-items-center">
+                        <span class="text-secondary fw-semibold">Enquadramento Legal:</span>
+                        <span class="text-muted" style="font-size: 10px;">Art. 340 CPB & Lei nº 14.129/2021 (Gov Digital)</span>
+                    </li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- Resumo Criptográfico do Último Bloco -->
+        <div class="col-md-6">
+            <div class="card border-0 shadow-sm rounded-4 h-100 p-3 bg-white">
+                <div class="d-flex align-items-center gap-2 mb-3 pb-2 border-bottom">
+                    <i class="bi bi-cpu-fill text-success fs-5"></i>
+                    <h6 class="fw-bold mb-0 text-dark">Último Estado do Blockchain</h6>
+                </div>
+                {% if latest_block %}
+                <div class="small">
+                    <div class="mb-2">
+                        <span class="text-secondary fw-semibold">Bloco Atual:</span>
+                        <span class="badge bg-dark ms-1">Bloco #{{ latest_block.block_index }}</span>
+                        <span class="badge bg-primary ms-1">{{ latest_block.action_type or 'REGISTRO' }}</span>
+                    </div>
+                    <div class="mb-2">
+                        <span class="text-secondary fw-semibold d-block mb-1">Hash SHA-256 do Registro (Data Hash):</span>
+                        <code class="d-block p-1.5 rounded bg-light border text-break font-monospace" style="font-size: 10.5px;">{{ latest_block.data_hash }}</code>
+                    </div>
+                    <div class="mb-2">
+                        <span class="text-secondary fw-semibold d-block mb-1">Hash Criptográfico do Bloco (Block Hash):</span>
+                        <code class="d-block p-1.5 rounded bg-primary-subtle text-primary border border-primary-subtle text-break font-monospace fw-bold" style="font-size: 10.5px;">{{ latest_block.block_hash }}</code>
+                    </div>
+                    <div class="text-muted" style="font-size: 10px;">
+                        Carimbo de Tempo UTC: <strong>{{ latest_block.timestamp }}</strong>
+                    </div>
+                </div>
+                {% else %}
+                <p class="text-muted small">Nenhum bloco registrado ainda.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Linha do Tempo Completa de Alterações (Cadeia de Blocos Históricos) -->
+    <div class="card border-0 shadow-sm rounded-4 bg-white p-4 mb-4">
+        <div class="d-flex justify-content-between align-items-center mb-3 pb-2 border-bottom">
+            <div>
+                <h5 class="fw-bold mb-1 text-dark d-flex align-items-center gap-2">
+                    <i class="bi bi-clock-history text-primary"></i> Linha do Tempo & Histórico de Alterações (Blockchain Ledger)
+                </h5>
+                <p class="text-muted small mb-0">Cada inserção e alteração gera um novo bloco imutável com QR Code e carimbo criptográfico auditável.</p>
+            </div>
+            <span class="badge bg-primary-subtle text-primary rounded-pill px-3 py-1.5 fw-bold">
+                {{ history | length }} Bloco(s) Registrado(s)
+            </span>
+        </div>
+
+        {% if history %}
+        <div class="timeline mt-3">
+            {% for block in history %}
+            <div class="position-relative ps-4 pb-4 border-start border-2 border-primary" style="margin-left: 12px;">
+                <!-- Ícone na linha do tempo -->
+                <div class="position-absolute rounded-circle bg-primary text-white d-flex align-items-center justify-content-center shadow-sm"
+                     style="left: -13px; top: 0; width: 24px; height: 24px; font-size: 11px;">
+                    {{ block.block_index }}
+                </div>
+
+                <div class="card border border-light-subtle rounded-3 shadow-xs p-3 ms-2">
+                    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-2">
+                        <div>
+                            <span class="badge {% if block.action_type == 'INSERCAO_INICIAL' %}bg-success{% elif block.action_type == 'APROVACAO_CURADORIA' %}bg-primary{% else %}bg-warning text-dark{% endif %} me-1">
+                                {{ block.action_type or 'ALTERAÇÃO' }}
+                            </span>
+                            <strong class="text-dark">Bloco #{{ block.block_index }}</strong>
+                            <span class="text-muted small ms-2"><i class="bi bi-calendar3 me-1"></i>{{ block.timestamp }}</span>
+                        </div>
+                        <div class="d-flex align-items-center gap-1.5 small">
+                            <span class="badge bg-secondary-subtle text-dark font-monospace" title="IP de Auditoria">
+                                <i class="bi bi-hdd-network me-1"></i>IP: {{ block.ip_origem or '127.0.0.1' }}
+                            </span>
+                        </div>
+                    </div>
+
+                    <div class="row align-items-center g-3">
+                        <div class="col-md-9">
+                            <div class="small text-dark mb-2">
+                                <strong>Descrição / Resumo da Ação:</strong> {{ block.changes_summary or 'Atualização de ocorrência' }}
+                            </div>
+                            <div class="small text-muted mb-2">
+                                <strong>Responsável:</strong> {{ block.curator_nome or 'Defesa Civil' }} 
+                                <span class="badge bg-light text-dark border ms-1">{{ block.curator_nivel or 'Geral' }}</span>
+                            </div>
+
+                            <div class="row g-2 font-monospace" style="font-size: 10px;">
+                                <div class="col-12">
+                                    <span class="text-muted">Previous Hash (Link do Bloco Anterior):</span>
+                                    <div class="text-break bg-light p-1 rounded border">{{ block.previous_hash }}</div>
+                                </div>
+                                <div class="col-md-6">
+                                    <span class="text-muted">Data Hash (Payload SHA-256):</span>
+                                    <div class="text-break bg-light p-1 rounded border">{{ block.data_hash }}</div>
+                                </div>
+                                <div class="col-md-6">
+                                    <span class="text-primary fw-bold">Block Hash Criptográfico:</span>
+                                    <div class="text-break bg-primary-subtle text-primary p-1 rounded border border-primary-subtle fw-bold">{{ block.block_hash }}</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Mini QR Code do Bloco -->
+                        <div class="col-md-3 text-center border-start ps-md-3">
+                            {% if block.qrcode_filename %}
+                            <img src="{{ url_for('serve_layer', filename=block.qrcode_filename) }}" width="84" height="84" class="rounded border p-1 bg-white mb-1 shadow-xs" alt="QR Code Bloco #{{ block.block_index }}">
+                            <div style="font-size: 9px;" class="text-muted fw-bold">QR Code Bloco #{{ block.block_index }}</div>
+                            <a href="{{ url_for('serve_layer', filename=block.qrcode_filename) }}" download="qrcode_bloco_{{ block.block_index }}.png" class="btn btn-xs btn-outline-secondary py-0 px-2 mt-1" style="font-size: 9px;">
+                                <i class="bi bi-download me-1"></i> Baixar QR
+                            </a>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="text-muted">Nenhum histórico registrado.</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
