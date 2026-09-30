@@ -387,7 +387,7 @@ def generate_occurrence_pdf(data, output_path, upload_folder="static/uploads"):
         ],
         [
             Paragraph("<b>Curador / Validador Responsável:</b>", cell_bold),
-            Paragraph(f"{data.get('responsavel_nome') or 'Curadoria Técnica Defesa Civil'} &bull; CPF: {data.get('responsavel_cpf') or 'N/A'} &bull; Matrícula: {data.get('responsavel_matricula') or 'N/A'}", cell_normal)
+            Paragraph(f"{data.get('curator_nome') or data.get('responsavel_nome') or 'Curadoria Técnica Defesa Civil'} &bull; CPF: {data.get('curator_cpf') or data.get('responsavel_cpf') or 'N/A'} &bull; Matrícula: {data.get('curator_matricula') or data.get('responsavel_matricula') or 'N/A'}", cell_normal)
         ],
         [
             Paragraph("<b>Declaração de Integridade:</b>", cell_bold),

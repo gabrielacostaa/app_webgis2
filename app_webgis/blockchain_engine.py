@@ -16,11 +16,23 @@ def calculate_data_hash(record_dict):
     Qualquer alteração de coordenadas, solo, declividade, vítimas, contatos ou mídias altera o hash.
     """
     canonical_keys = [
-        'id', 'title', 'data_evento', 'lat', 'lng', 'municipio', 'uf', 'bairro',
-        'tipologia', 'zona', 'ped_classe_solo', 'ped_textura', 'ped_profundidade',
-        'geo_declividade', 'geo_altitude', 'geo_forma_terreno', 'geol_tipo_rocha',
-        'clima_precipitacao_evento', 'clima_precipitacao_mensal',
-        'n_mortos', 'n_feridos', 'soc_n_familias', 'econ_custo_total', 'amb_tipo_impacto',
+        'id', 'title', 'description', 'data_evento', 'lat', 'lng', 'municipio', 'uf', 'bairro',
+        'tipologia', 'zona', 'area_u_habitacoes', 'perc_area_atu', 'area_ar', 'area_rm', 'perc_area_atr',
+        'clima_vento', 'clima_precipitacao_evento', 'clima_pressao', 'clima_temperatura',
+        'clima_evapotranspiracao', 'clima_precipitacao_mensal', 'clima_precipitacao_5d', 'clima_precipitacao_10d',
+        'ped_classe_solo', 'ped_profundidade', 'ped_textura', 'ped_porosidade',
+        'ped_ucc', 'ped_cad', 'ped_k', 'ped_umidade_evento',
+        'geo_orientacao', 'geo_curvatura', 'geo_forma_terreno', 'geo_declividade', 'geo_altitude',
+        'geol_tipo_rocha', 'geol_composicao', 'geol_estrutura', 'geol_idade', 'geol_tectonismo',
+        'antrop_escavacao', 'antrop_sobrecarga', 'antrop_tipo_uso', 'antrop_mineracao',
+        'econ_custo_total', 'econ_infraestrutura', 'econ_patrimonio_privado', 'econ_patrimonio_publico',
+        'econ_agri_area_atingida', 'econ_agri_perc_area', 'econ_agri_cultura', 'econ_agri_valor',
+        'econ_interrupcao_duracao', 'econ_interrupcao_setores', 'econ_seguro', 'econ_custo_recuperacao',
+        'soc_servicos_afetados', 'soc_tempo_recuperacao', 'soc_n_familias', 'soc_n_desalojados',
+        'soc_n_desabrigados', 'soc_n_desaparecidos', 'n_mortos', 'n_feridos', 'soc_valor_total_danos',
+        'amb_tipo_impacto', 'amb_area_atingida', 'amb_recursos_afetados', 'amb_dano_biodiversidade',
+        'amb_custo_mitigacao', 'amb_tempo_recuperacao', 'amb_status_recuperacao',
+        'midia_tipo', 'midia_fonte', 'midia_url',
         'telefone_contato', 'email_contato', 'ip_origem',
         'esfera_responsavel', 'motivo_escalacao', 'status'
     ]

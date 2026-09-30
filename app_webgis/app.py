@@ -1,5 +1,5 @@
 # MOVMASSA WebGIS v2.5.1 Deployment Sync
-from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_from_directory, abort
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_from_directory, send_file, abort
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
@@ -2130,18 +2130,39 @@ def occurrence_pdf(point_id):
         p_dict['qrcode_filename'] = b_dict.get('qrcode_filename')
         p_dict['ip_origem'] = b_dict.get('ip_origem') or p_dict.get('ip_origem')
         
+        # Encontra curador validador oficial no blockchain
+        approval_block = None
+        for b in reversed(history):
+            if 'APROVACAO' in (b.get('action_type') or ''):
+                approval_block = b
+                break
+        cur_target = approval_block or b_dict
+        if cur_target.get('curator_nome'):
+            p_dict['curator_nome'] = cur_target.get('curator_nome')
+            p_dict['curator_cpf'] = cur_target.get('curator_cpf')
+            p_dict['curator_matricula'] = cur_target.get('curator_matricula')
+            p_dict['curator_nivel'] = cur_target.get('curator_nivel')
+            if p_dict.get('status') == 'aprovado':
+                p_dict['responsavel_nome'] = cur_target.get('curator_nome')
+                p_dict['responsavel_cpf'] = cur_target.get('curator_cpf')
+                p_dict['responsavel_matricula'] = cur_target.get('curator_matricula')
+                p_dict['responsavel_nivel'] = cur_target.get('curator_nivel')
+        
     conn.close()
     
-    with tempfile.TemporaryDirectory() as tmpdir:
-        pdf_path = os.path.join(tmpdir, f"relatorio_ocorrencia_{point_id}.pdf")
-        generate_occurrence_pdf(p_dict, pdf_path, upload_folder=app.config['UPLOAD_FOLDER'])
+    import io
+    pdf_path = os.path.join(app.config['UPLOAD_FOLDER'], f"relatorio_ocorrencia_{point_id}.pdf")
+    generate_occurrence_pdf(p_dict, pdf_path, upload_folder=app.config['UPLOAD_FOLDER'])
+    
+    with open(pdf_path, 'rb') as f:
+        pdf_bytes = io.BytesIO(f.read())
         
-        return send_from_directory(
-            tmpdir,
-            f"relatorio_ocorrencia_{point_id}.pdf",
-            as_attachment=False,
-            mimetype='application/pdf'
-        )
+    return send_file(
+        pdf_bytes,
+        as_attachment=False,
+        download_name=f"relatorio_ocorrencia_{point_id}.pdf",
+        mimetype='application/pdf'
+    )
 
 # --- Rotas de Auditoria Blockchain, Rastreabilidade e Cadeia de Custódia ---
 
@@ -2262,9 +2283,9 @@ def check_curadoria_permissions(sub, user):
 
     u_role_level = getattr(user, 'role_level', 'user') or 'user'
     u_funcao = getattr(user, 'funcao', 'agente') or 'agente'
-    is_admin_geral = (u_role_level == 'admin_geral')
-    is_gestor = (user.role in ['admin', 'org'] or u_funcao in ['gestor', 'gestor_agente'])
-    is_owner = (user.id == sub_user_id) if (user.is_authenticated and sub_user_id) else False
+    is_admin_geral = (u_role_level == 'admin_geral' or (getattr(user, 'role', '') == 'admin' and 'municipal' not in u_role_level and 'estadual' not in u_role_level and 'nacional' not in u_role_level))
+    is_gestor = (getattr(user, 'role', '') in ['admin', 'org'] or u_funcao in ['gestor', 'gestor_agente'])
+    is_owner = (user.id == sub_user_id) if (getattr(user, 'is_authenticated', False) and sub_user_id) else False
     u_municipio = (getattr(user, 'municipio', 'Angra dos Reis') or 'Angra dos Reis').strip()
     u_uf = (getattr(user, 'uf', 'RJ') or 'RJ').strip()
 
@@ -2282,49 +2303,59 @@ def check_curadoria_permissions(sub, user):
     else:
         current_tier_label = "Nacional (Brasil)"
 
+    # Competência federativa atual para aprovar / escalar (durante o estado pendente)
+    current_tier_matches = False
+    if is_admin_geral:
+        current_tier_matches = True
+    elif sub_esfera == 'municipal':
+        matches_city = (u_municipio.lower() == sub_municipio.lower())
+        if 'municipal' in u_role_level and matches_city:
+            current_tier_matches = True
+        else:
+            is_waiting_reason = f"Aguardando validação da Defesa Civil Municipal de {sub_municipio}."
+    elif sub_esfera == 'estadual':
+        matches_uf = (u_uf.upper() == sub_uf.upper())
+        if 'estadual' in u_role_level and matches_uf:
+            current_tier_matches = True
+        else:
+            is_waiting_reason = f"Aguardando validação da Defesa Civil Estadual ({sub_uf}) após escalação municipal."
+    elif sub_esfera == 'nacional':
+        if 'nacional' in u_role_level:
+            current_tier_matches = True
+        else:
+            is_waiting_reason = "Aguardando validação da Defesa Civil Nacional (Governo Federal) após escalação."
+
     if sub_status == 'pendente':
-        if is_admin_geral:
+        if current_tier_matches:
             can_approve = True
-            if sub_esfera == 'municipal':
-                can_escalate = True
-                escalate_target = 'estadual'
-                target_tier_name = f"Defesa Civil Estadual ({sub_uf})"
-            elif sub_esfera == 'estadual':
-                can_escalate = True
-                escalate_target = 'nacional'
-                target_tier_name = "Defesa Civil Nacional (Governo Federal)"
-        elif sub_esfera == 'municipal':
-            matches_city = (u_municipio.lower() == sub_municipio.lower())
-            if 'municipal' in u_role_level and matches_city:
-                can_approve = True
-                if is_gestor:
+            if is_gestor or is_admin_geral:
+                if sub_esfera == 'municipal':
                     can_escalate = True
                     escalate_target = 'estadual'
                     target_tier_name = f"Defesa Civil Estadual ({sub_uf})"
-                else:
-                    can_escalate = False
-            else:
-                is_waiting_reason = f"Aguardando validação da Defesa Civil Municipal de {sub_municipio}."
-        elif sub_esfera == 'estadual':
-            matches_uf = (u_uf.upper() == sub_uf.upper())
-            if 'estadual' in u_role_level and matches_uf:
-                can_approve = True
-                if is_gestor:
+                elif sub_esfera == 'estadual':
                     can_escalate = True
                     escalate_target = 'nacional'
                     target_tier_name = "Defesa Civil Nacional (Governo Federal)"
-                else:
-                    can_escalate = False
-            else:
-                is_waiting_reason = f"Aguardando validação da Defesa Civil Estadual ({sub_uf}) após escalação municipal."
-        elif sub_esfera == 'nacional':
-            if 'nacional' in u_role_level:
-                can_approve = True
-            else:
-                is_waiting_reason = "Aguardando validação da Defesa Civil Nacional (Governo Federal) após escalação."
 
-    can_edit = is_admin_geral or can_approve or is_owner
-    can_delete = is_admin_geral or can_approve or is_owner
+    # Competência de Curadoria e Edição do Dicionário de Dados:
+    # "a edição dos dados no dicionário de dados deve ser feita por quem aprova o dado"
+    # - Enquanto pendente: quem tem a competência atual para validar / aprovar
+    # - Após aprovado: a Defesa Civil competente (Nacional em todo Brasil, Estadual na sua UF, Municipal no seu município, ou Admin Geral)
+    can_curate = False
+    if is_admin_geral or ('nacional' in u_role_level):
+        can_curate = True
+    elif 'estadual' in u_role_level and (u_uf.upper() == sub_uf.upper()):
+        can_curate = True
+    elif 'municipal' in u_role_level and (u_municipio.lower() == sub_municipio.lower()):
+        can_curate = True
+
+    if sub_status == 'pendente':
+        can_edit = current_tier_matches
+    else:
+        can_edit = can_curate
+
+    can_delete = is_admin_geral or (is_gestor and can_curate)
 
     return {
         'sub_esfera': sub_esfera,
@@ -2473,7 +2504,8 @@ def curadoria_update(sub_id):
     perms = check_curadoria_permissions(sub, current_user)
     if not perms['can_edit']:
         conn.close()
-        return jsonify({'error': f'Unauthorized: Você não possui permissão para editar este registro. {perms["is_waiting_reason"]}'}), 403
+        flash(f'Acesso Negado: A edição dos dados no dicionário de dados deve ser realizada apenas por quem possui competência de validação/aprovação sobre o registro. {perms["is_waiting_reason"]}', 'danger')
+        return redirect(url_for('curadoria'))
         
     f = request.form
     client_ip = get_client_ip()
