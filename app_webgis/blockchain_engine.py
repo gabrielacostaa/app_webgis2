@@ -172,17 +172,45 @@ def notarize_record(conn, submission_id, curator_user=None, action_type='INSERCA
     generate_block_qrcode(tracking_url, qr_filename, upload_folder)
     
     # 4. Inserção do novo bloco histórico na tabela blockchain_ledger
-    conn.execute('''
-        INSERT INTO blockchain_ledger (
-            submission_id, block_index, timestamp, data_hash, previous_hash, block_hash,
+    try:
+        conn.execute('''
+            INSERT INTO blockchain_ledger (
+                submission_id, block_index, timestamp, data_hash, previous_hash, block_hash,
+                curator_nome, curator_cpf, curator_matricula, curator_nivel,
+                ip_origem, action_type, changes_summary, qrcode_filename
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            submission_id, block_index, timestamp_iso, data_hash, previous_hash, block_hash,
             curator_nome, curator_cpf, curator_matricula, curator_nivel,
-            ip_origem, action_type, changes_summary, qrcode_filename
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ''', (
-        submission_id, block_index, timestamp_iso, data_hash, previous_hash, block_hash,
-        curator_nome, curator_cpf, curator_matricula, curator_nivel,
-        ip_addr, action_type, changes_summary or 'Atualização de ocorrência', qr_filename
-    ))
+            ip_addr, action_type, changes_summary or 'Atualização de ocorrência', qr_filename
+        ))
+        conn.commit()
+    except Exception as e_ins:
+        print("[!] Erro ao inserir bloco no ledger:", e_ins)
+        try:
+            conn.rollback()
+            conn.execute("ALTER TABLE blockchain_ledger DROP CONSTRAINT IF EXISTS blockchain_ledger_submission_id_key CASCADE")
+            conn.execute("DROP INDEX IF EXISTS blockchain_ledger_submission_id_key CASCADE")
+            conn.commit()
+            conn.execute('''
+                INSERT INTO blockchain_ledger (
+                    submission_id, block_index, timestamp, data_hash, previous_hash, block_hash,
+                    curator_nome, curator_cpf, curator_matricula, curator_nivel,
+                    ip_origem, action_type, changes_summary, qrcode_filename
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                submission_id, block_index, timestamp_iso, data_hash, previous_hash, block_hash,
+                curator_nome, curator_cpf, curator_matricula, curator_nivel,
+                ip_addr, action_type, changes_summary or 'Atualização de ocorrência', qr_filename
+            ))
+            conn.commit()
+        except Exception as e2:
+            print("[!] Falha no retry de inserção do bloco:", e2)
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            raise e2
     
     # 5. Atualizar na tabela submissions o ponteiro para o QR Code e IP mais recente
     conn.execute('''
@@ -269,3 +297,95 @@ def verify_record_integrity(conn, submission_id):
             'latest_block': latest_block,
             'history': history
         }
+
+def sync_occurrence_blockchain_history(conn, submission_id, host_url='http://127.0.0.1:5000', upload_folder='static/uploads'):
+    """
+    Garante que a linha do tempo do Blockchain Ledger esteja 100% sincronizada
+    com o ciclo de vida completo da ocorrência, reconstruindo e notarizando de forma retroativa
+    quaisquer blocos que tenham faltado anteriormente (ex: escalações, aprovação nacional, alteração de atributos).
+    """
+    row = conn.execute("SELECT * FROM submissions WHERE id = ?", (submission_id,)).fetchone()
+    if not row:
+        return
+        
+    sub_dict = dict(row)
+    history = get_submission_history(conn, submission_id)
+    
+    # 1. Se não houver nenhum bloco, cria o Bloco #1 (INSERCAO_INICIAL)
+    if not history:
+        notarize_record(
+            conn,
+            submission_id,
+            action_type='INSERCAO_INICIAL',
+            changes_summary='Envio de ocorrência por usuário (Auditoria de IP e Contato gravados)',
+            ip_origem=sub_dict.get('ip_origem') or '127.0.0.1',
+            host_url=host_url,
+            upload_folder=upload_folder
+        )
+        history = get_submission_history(conn, submission_id)
+        
+    actions = [b.get('action_type') for b in history]
+    esfera = (sub_dict.get('esfera_responsavel') or 'municipal').strip().lower()
+    
+    # 2. Se a ocorrência foi escalada para estadual ou nacional, garante bloco de escalação estadual
+    if esfera in ['estadual', 'nacional'] and 'ESCALACAO_ESTADUAL' not in actions:
+        muni = sub_dict.get('municipio') or 'Angra dos Reis'
+        uf = sub_dict.get('uf') or 'RJ'
+        motivo = sub_dict.get('motivo_escalacao') or 'Ausência temporária de efetivo municipal local'
+        notarize_record(
+            conn,
+            submission_id,
+            action_type='ESCALACAO_ESTADUAL',
+            changes_summary=f"Declaração de Indisponibilidade de Agentes: Gestor Municipal da Defesa Civil de {muni} acionou a Defesa Civil Estadual ({uf}). Motivo: {motivo}",
+            ip_origem=sub_dict.get('ip_origem') or '127.0.0.1',
+            host_url=host_url,
+            upload_folder=upload_folder
+        )
+        history = get_submission_history(conn, submission_id)
+        actions = [b.get('action_type') for b in history]
+        
+    # 3. Se foi escalada para nacional, garante bloco de escalação nacional
+    if esfera == 'nacional' and 'ESCALACAO_NACIONAL' not in actions:
+        uf = sub_dict.get('uf') or 'RJ'
+        motivo = sub_dict.get('motivo_escalacao') or 'Demanda federativa escalada por indisponibilidade de efetivo estadual'
+        notarize_record(
+            conn,
+            submission_id,
+            action_type='ESCALACAO_NACIONAL',
+            changes_summary=f"Declaração de Indisponibilidade de Agentes: Defesa Civil Estadual ({uf}) acionou a Defesa Civil Nacional (Governo Federal). Motivo: {motivo}",
+            ip_origem=sub_dict.get('ip_origem') or '127.0.0.1',
+            host_url=host_url,
+            upload_folder=upload_folder
+        )
+        history = get_submission_history(conn, submission_id)
+        actions = [b.get('action_type') for b in history]
+        
+    # 4. Se foi aprovada, mas não tem o bloco de aprovação oficial
+    if sub_dict.get('status') == 'aprovado' and not any('APROVACAO' in (act or '') for act in actions):
+        act_aprov = f"APROVACAO_CURADORIA_{esfera.upper()}"
+        cur_tier = f"Defesa Civil {esfera.title()}"
+        notarize_record(
+            conn,
+            submission_id,
+            action_type=act_aprov,
+            changes_summary=f"Homologação técnica oficial na Curadoria pela {cur_tier}. Parecer: {sub_dict.get('feedback') or 'Aprovado sem ressalvas'}",
+            ip_origem=sub_dict.get('ip_origem') or '127.0.0.1',
+            host_url=host_url,
+            upload_folder=upload_folder
+        )
+        history = get_submission_history(conn, submission_id)
+        
+    # 5. Se os atributos atuais na base diferem do último bloco (características cadastradas/editadas)
+    if history:
+        latest = history[-1]
+        cur_hash = calculate_data_hash(sub_dict)
+        if cur_hash != latest['data_hash']:
+            notarize_record(
+                conn,
+                submission_id,
+                action_type='ALTERACAO_DADOS',
+                changes_summary=f"Atualização e detalhamento de atributos no Dicionário de Dados por {sub_dict.get('responsavel_nome') or 'Curador Responsável'}",
+                ip_origem=sub_dict.get('ip_origem') or '127.0.0.1',
+                host_url=host_url,
+                upload_folder=upload_folder
+            )

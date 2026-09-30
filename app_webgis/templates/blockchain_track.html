@@ -168,8 +168,11 @@
                     <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-2">
                         <div>
                             {% set act = block.action_type or 'ALTERAÇÃO' %}
-                            <span class="badge {% if act == 'INSERCAO_INICIAL' %}bg-success{% elif act == 'APROVACAO_CURADORIA' %}bg-primary{% elif act == 'REJEICAO_CURADORIA' %}bg-danger{% elif 'ESCALACAO' in act %}bg-warning text-dark border border-warning-subtle fw-bold{% else %}bg-secondary{% endif %} me-1">
-                                {% if 'ESCALACAO' in act %}<i class="bi bi-arrow-up-right-circle me-1"></i>{% endif %}
+                            <span class="badge {% if act == 'INSERCAO_INICIAL' %}bg-success{% elif 'APROVACAO' in act %}bg-primary{% elif 'REJEICAO' in act %}bg-danger{% elif 'ESCALACAO' in act %}bg-warning text-dark border border-warning-subtle fw-bold{% elif 'ALTERACAO' in act %}bg-info text-dark border border-info-subtle fw-bold{% else %}bg-secondary{% endif %} me-1">
+                                {% if 'ESCALACAO' in act %}<i class="bi bi-arrow-up-right-circle-fill me-1"></i>{% endif %}
+                                {% if 'ALTERACAO' in act %}<i class="bi bi-pencil-square me-1"></i>{% endif %}
+                                {% if 'APROVACAO' in act %}<i class="bi bi-patch-check-fill me-1"></i>{% endif %}
+                                {% if act == 'INSERCAO_INICIAL' %}<i class="bi bi-plus-circle-fill me-1"></i>{% endif %}
                                 {{ act }}
                             </span>
                             <strong class="text-dark">Bloco #{{ block.block_index }}</strong>

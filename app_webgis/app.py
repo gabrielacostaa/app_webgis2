@@ -369,8 +369,51 @@ def upgrade_db():
         print("Aviso na criacao da tabela layers:", e)
 
     # Migração estrutural da tabela blockchain_ledger para suportar múltiplos blocos por submissão
-    try:
-        if not is_pg:
+    if is_pg:
+        try:
+            conn.execute('''
+                DO $$
+                DECLARE
+                    r RECORD;
+                BEGIN
+                    FOR r IN (
+                        SELECT conname 
+                        FROM pg_constraint 
+                        WHERE conrelid = 'blockchain_ledger'::regclass 
+                          AND contype IN ('u')
+                    ) LOOP
+                        EXECUTE 'ALTER TABLE blockchain_ledger DROP CONSTRAINT IF EXISTS ' || quote_ident(r.conname) || ' CASCADE';
+                    END LOOP;
+                END $$;
+            ''')
+            conn.commit()
+        except Exception as e:
+            conn.rollback()
+            print("Aviso ao remover constraints unique em blockchain_ledger (PostgreSQL):", e)
+
+        try:
+            conn.execute('''
+                DO $$
+                DECLARE
+                    r RECORD;
+                BEGIN
+                    FOR r IN (
+                        SELECT indexname 
+                        FROM pg_indexes 
+                        WHERE tablename = 'blockchain_ledger' 
+                          AND indexdef LIKE '%UNIQUE%' 
+                          AND indexname NOT LIKE '%_pkey'
+                    ) LOOP
+                        EXECUTE 'DROP INDEX IF EXISTS ' || quote_ident(r.indexname) || ' CASCADE';
+                    END LOOP;
+                END $$;
+            ''')
+            conn.commit()
+        except Exception as e:
+            conn.rollback()
+            print("Aviso ao remover indices unique em blockchain_ledger (PostgreSQL):", e)
+    else:
+        try:
             res = conn.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='blockchain_ledger'").fetchone()
             if res and 'submission_id INTEGER UNIQUE' in res[0]:
                 conn.execute("ALTER TABLE blockchain_ledger RENAME TO blockchain_ledger_legacy")
@@ -404,9 +447,9 @@ def upgrade_db():
                 ''')
                 conn.execute("DROP TABLE blockchain_ledger_legacy")
                 conn.commit()
-    except Exception as e:
-        conn.rollback()
-        print("Aviso na migração estrutural do blockchain_ledger:", e)
+        except Exception as e:
+            conn.rollback()
+            print("Aviso na migração estrutural do blockchain_ledger:", e)
 
     try:
         conn.execute(f'''
@@ -2102,23 +2145,18 @@ def occurrence_pdf(point_id):
         
     p_dict = dict(point)
     
-    # Buscar ou gerar histórico e último bloco no Blockchain Ledger para o laudo
+    # Sincroniza e garante histórico completo no Blockchain Ledger para o laudo
+    try:
+        blockchain_engine.sync_occurrence_blockchain_history(
+            conn,
+            point_id,
+            host_url=request.host_url,
+            upload_folder=app.config['UPLOAD_FOLDER']
+        )
+    except Exception as e:
+        print("Aviso ao sincronizar no PDF:", e)
+        
     history = blockchain_engine.get_submission_history(conn, point_id)
-    if not history:
-        try:
-            b_info = blockchain_engine.notarize_record(
-                conn,
-                point_id,
-                current_user,
-                action_type='INSERCAO_INICIAL',
-                changes_summary='Notarização para Emissão de Laudo Técnico',
-                ip_origem=get_client_ip(),
-                host_url=request.host_url,
-                upload_folder=app.config['UPLOAD_FOLDER']
-            )
-            history = blockchain_engine.get_submission_history(conn, point_id)
-        except Exception as e:
-            print("Aviso ao notarizar no PDF:", e)
             
     if history:
         b_dict = history[-1]
@@ -2181,23 +2219,22 @@ def blockchain_track_view(sub_id):
         flash('Registro de ocorrência não encontrado.', 'warning')
         return redirect(url_for('index'))
     
-    sub_dict = dict(submission)
-    history = blockchain_engine.get_submission_history(conn, sub_id)
-    if not history:
-        try:
-            blockchain_engine.notarize_record(
-                conn,
-                sub_id,
-                action_type='INSERCAO_INICIAL',
-                changes_summary='Notarização cadastral inicial de auditoria',
-                ip_origem=sub_dict.get('ip_origem') or '127.0.0.1',
-                host_url=request.host_url,
-                upload_folder=app.config['UPLOAD_FOLDER']
-            )
-            history = blockchain_engine.get_submission_history(conn, sub_id)
-        except Exception as e:
-            print("Aviso ao notarizar visualização:", e)
+    # Sincroniza e garante que todos os marcos históricos (inserção, escalações, aprovação, características)
+    # estejam com seus respectivos blocos gravados no ledger
+    try:
+        blockchain_engine.sync_occurrence_blockchain_history(
+            conn,
+            sub_id,
+            host_url=request.host_url,
+            upload_folder=app.config['UPLOAD_FOLDER']
+        )
+    except Exception as e_sync:
+        print("[!] Erro ao sincronizar ledger histórico:", e_sync)
 
+    sub_updated = conn.execute('SELECT * FROM submissions WHERE id = ?', (sub_id,)).fetchone()
+    sub_dict = dict(sub_updated) if sub_updated else dict(submission)
+
+    history = blockchain_engine.get_submission_history(conn, sub_id)
     verification = blockchain_engine.verify_record_integrity(conn, sub_id)
     conn.close()
 
@@ -2215,23 +2252,16 @@ def blockchain_track_view(sub_id):
 @app.route('/api/occurrence/<int:sub_id>/blockchain')
 def api_occurrence_blockchain(sub_id):
     conn = get_db_connection()
+    try:
+        blockchain_engine.sync_occurrence_blockchain_history(
+            conn,
+            sub_id,
+            host_url=request.host_url,
+            upload_folder=app.config['UPLOAD_FOLDER']
+        )
+    except Exception:
+        pass
     history = blockchain_engine.get_submission_history(conn, sub_id)
-    if not history:
-        sub = conn.execute('SELECT status, ip_origem FROM submissions WHERE id = ?', (sub_id,)).fetchone()
-        if sub:
-            try:
-                blockchain_engine.notarize_record(
-                    conn,
-                    sub_id,
-                    action_type='INSERCAO_INICIAL',
-                    changes_summary='Notarização sob demanda via API',
-                    ip_origem=sub['ip_origem'] or get_client_ip(),
-                    host_url=request.host_url,
-                    upload_folder=app.config['UPLOAD_FOLDER']
-                )
-                history = blockchain_engine.get_submission_history(conn, sub_id)
-            except Exception:
-                pass
     conn.close()
     
     if not history:
