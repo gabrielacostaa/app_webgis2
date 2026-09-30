@@ -35,6 +35,7 @@
                                 <th>Nome Completo & Contato</th>
                                 <th>CPF / Matrícula</th>
                                 <th>Esfera / Nível</th>
+                                <th>Jurisdição (Local)</th>
                                 <th>Função no Sistema</th>
                                 <th class="pe-4 text-end">Ações</th>
                             </tr>
@@ -72,6 +73,10 @@
                                     <span class="badge {% if u_dict.get('role_level') == 'admin_geral' %}bg-danger{% elif 'admin' in u_dict.get('role_level', '') or u_dict.get('role_level') == 'org' %}bg-primary{% else %}bg-secondary{% endif %} px-2 py-1">
                                         <i class="bi bi-geo-alt-fill me-1"></i> {{ level_label }}
                                     </span>
+                                </td>
+                                <td>
+                                    <div class="fw-bold text-dark">{{ u_dict.get('municipio') or 'Angra dos Reis' }}</div>
+                                    <span class="badge bg-light text-secondary border">{{ u_dict.get('uf') or 'RJ' }}</span>
                                 </td>
                                 <td>
                                     {% set func = u_dict.get('funcao') or ('gestor_agente' if u_dict.get('role') in ['admin', 'org'] else 'agente') %}
@@ -189,6 +194,34 @@
                                 <input type="hidden" name="funcao" value="agente">
                             {% endif %}
                         </div>
+
+                        <div class="col-md-6" id="divJurisdicaoUF">
+                            <label class="form-label fw-bold small">Estado (UF)</label>
+                            {% if current_user.role_level == 'admin_geral' %}
+                                <select name="uf" id="selectUF" class="form-select form-select-sm rounded-3">
+                                    {% for uf in brazil_ufs %}
+                                        <option value="{{ uf }}" {% if uf == 'RJ' %}selected{% endif %}>{{ uf }}</option>
+                                    {% endfor %}
+                                </select>
+                            {% else %}
+                                <input type="text" class="form-control form-control-sm rounded-3 bg-light text-muted" value="{{ current_user.uf or 'RJ' }}" readonly disabled>
+                                <input type="hidden" name="uf" value="{{ current_user.uf or 'RJ' }}">
+                            {% endif %}
+                        </div>
+
+                        <div class="col-md-6" id="divJurisdicaoMunicipio">
+                            <label class="form-label fw-bold small">Município da Jurisdição</label>
+                            {% if current_user.role_level == 'admin_geral' %}
+                                <select name="municipio" id="selectMunicipio" class="form-select form-select-sm rounded-3">
+                                    {% for mun in rj_municipalities %}
+                                        <option value="{{ mun }}" {% if mun == 'Angra dos Reis' %}selected{% endif %}>{{ mun }}</option>
+                                    {% endfor %}
+                                </select>
+                            {% else %}
+                                <input type="text" class="form-control form-control-sm rounded-3 bg-light text-muted" value="{{ current_user.municipio or 'Angra dos Reis' }}" readonly disabled>
+                                <input type="hidden" name="municipio" value="{{ current_user.municipio or 'Angra dos Reis' }}">
+                            {% endif %}
+                        </div>
                     </div>
                 </div>
                 <div class="modal-footer bg-light p-3 border-top-0">
@@ -199,4 +232,16 @@
         </div>
     </div>
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    var emailInp = document.getElementById('emailInput');
+    var userHidden = document.getElementById('usernameHidden');
+    if (emailInp && userHidden) {
+        emailInp.addEventListener('input', function() {
+            userHidden.value = emailInp.value.trim().toLowerCase();
+        });
+    }
+});
+</script>
 {% endblock %}

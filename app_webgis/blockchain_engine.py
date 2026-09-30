@@ -21,7 +21,8 @@ def calculate_data_hash(record_dict):
         'geo_declividade', 'geo_altitude', 'geo_forma_terreno', 'geol_tipo_rocha',
         'clima_precipitacao_evento', 'clima_precipitacao_mensal',
         'n_mortos', 'n_feridos', 'soc_n_familias', 'econ_custo_total', 'amb_tipo_impacto',
-        'telefone_contato', 'email_contato', 'ip_origem'
+        'telefone_contato', 'email_contato', 'ip_origem',
+        'esfera_responsavel', 'motivo_escalacao'
     ]
     
     clean_dict = {}

@@ -167,8 +167,10 @@
                 <div class="card border border-light-subtle rounded-3 shadow-xs p-3 ms-2">
                     <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-2">
                         <div>
-                            <span class="badge {% if block.action_type == 'INSERCAO_INICIAL' %}bg-success{% elif block.action_type == 'APROVACAO_CURADORIA' %}bg-primary{% else %}bg-warning text-dark{% endif %} me-1">
-                                {{ block.action_type or 'ALTERAÇÃO' }}
+                            {% set act = block.action_type or 'ALTERAÇÃO' %}
+                            <span class="badge {% if act == 'INSERCAO_INICIAL' %}bg-success{% elif act == 'APROVACAO_CURADORIA' %}bg-primary{% elif act == 'REJEICAO_CURADORIA' %}bg-danger{% elif 'ESCALACAO' in act %}bg-warning text-dark border border-warning-subtle fw-bold{% else %}bg-secondary{% endif %} me-1">
+                                {% if 'ESCALACAO' in act %}<i class="bi bi-arrow-up-right-circle me-1"></i>{% endif %}
+                                {{ act }}
                             </span>
                             <strong class="text-dark">Bloco #{{ block.block_index }}</strong>
                             <span class="text-muted small ms-2"><i class="bi bi-calendar3 me-1"></i>{{ block.timestamp }}</span>
@@ -182,9 +184,16 @@
 
                     <div class="row align-items-center g-3">
                         <div class="col-md-9">
+                            {% if 'ESCALACAO' in act %}
+                            <div class="alert alert-warning border-0 p-2.5 rounded-3 small mb-2 shadow-xs">
+                                <div class="fw-bold text-dark mb-1"><i class="bi bi-shield-exclamation text-warning-emphasis me-1"></i> Ato Administrativo de Indisponibilidade de Agentes:</div>
+                                <div class="text-secondary">{{ block.changes_summary }}</div>
+                            </div>
+                            {% else %}
                             <div class="small text-dark mb-2">
                                 <strong>Descrição / Resumo da Ação:</strong> {{ block.changes_summary or 'Atualização de ocorrência' }}
                             </div>
+                            {% endif %}
                             <div class="small text-muted mb-2">
                                 <strong>Responsável:</strong> {{ block.curator_nome or 'Defesa Civil' }} 
                                 <span class="badge bg-light text-dark border ms-1">{{ block.curator_nivel or 'Geral' }}</span>

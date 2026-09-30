@@ -98,7 +98,7 @@
                         
                         <li class="nav-item d-flex align-items-center gap-2 me-lg-2">
                             <span class="badge bg-gradient-navy text-white px-2 py-1 rounded-pill border border-secondary" style="font-size: 0.75rem;">
-                                <i class="bi bi-shield-fill text-warning me-1"></i> {{ level_label }}
+                                <i class="bi bi-shield-fill text-warning me-1"></i> {{ level_label }} {% if 'municipal' in (current_user.role_level or '') and current_user.municipio %}({{ current_user.municipio }}-{{ current_user.uf }}){% elif 'estadual' in (current_user.role_level or '') and current_user.uf %}({{ current_user.uf }}){% endif %}
                             </span>
                         </li>
                         <li class="nav-item dropdown">

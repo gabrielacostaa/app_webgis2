@@ -112,18 +112,6 @@
                         </thead>
                         <tbody>
                             {% for sub in submissions %}
-                            {% set is_admin_geral = (current_user.role_level == 'admin_geral') %}
-                            {% set is_gestor = (current_user.role in ['admin', 'org'] or current_user.funcao in ['gestor', 'gestor_agente']) %}
-                            {% set is_owner = (current_user.id == sub.user_id) %}
-                            {% set sub_sphere = sub.responsavel_nivel or sub.u_role_level or '' %}
-                            {% set current_sphere = current_user.role_level.replace('agente_', 'admin_') if current_user.role_level else '' %}
-                            {% set target_sphere = sub_sphere.replace('agente_', 'admin_') if sub_sphere else '' %}
-                            {% set is_same_sphere = (current_sphere == target_sphere) %}
-
-                            {% set can_edit = is_admin_geral or (is_gestor and is_same_sphere) or is_owner %}
-                            {% set can_approve = is_admin_geral or (is_gestor and is_same_sphere) %}
-                            {% set can_delete = is_admin_geral or (is_gestor and is_same_sphere) or is_owner %}
-
                             <tr>
                                 <td class="ps-4">
                                     <span class="fw-bold text-primary">#{{ sub.id }}</span><br>
@@ -141,8 +129,9 @@
                                             'agente_estadual': 'Defesa Civil Estadual',
                                             'agente_municipal': 'Defesa Civil Municipal',
                                             'org': 'Organização',
-                                            'user': 'Usuário'
-                                        }.get(sub_sphere, sub_sphere) %}
+                                            'user': 'Usuário',
+                                            'Visitante': 'Visitante / Cidadão'
+                                        }.get(sub.responsavel_nivel or sub.u_role_level or '', sub.responsavel_nivel or sub.u_role_level or 'Visitante') %}
                                         <span class="badge bg-dark-subtle text-dark">{{ level_label }}</span>
                                     </div>
                                     <div class="text-muted" style="font-size: 10px;">
@@ -193,8 +182,23 @@
                                 <td>
                                     {% if sub.status == 'pendente' %}
                                         <span class="badge bg-warning text-dark px-2 py-1"><i class="bi bi-clock-history me-1"></i> Pendente</span>
+                                        <div class="mt-1">
+                                            <span class="badge bg-info-subtle text-dark border border-info-subtle small fw-normal" title="Esfera federativa atualmente competente para validar esta ocorrência">
+                                                <i class="bi bi-shield me-1 text-primary"></i>{{ sub.current_tier_label or 'Defesa Civil Municipal' }}
+                                            </span>
+                                        </div>
+                                        {% if sub.motivo_escalacao %}
+                                        <div class="mt-1">
+                                            <span class="badge bg-warning-subtle text-dark border border-warning text-wrap text-start" style="font-size: 9.5px; max-width: 160px;" title="Escalado por {{ sub.escalado_por }} em {{ sub.data_escalacao }}">
+                                                <i class="bi bi-arrow-up-right-circle text-warning-emphasis me-1"></i><strong>Escalado:</strong> {{ sub.motivo_escalacao }}
+                                            </span>
+                                        </div>
+                                        {% endif %}
                                     {% elif sub.status == 'aprovado' %}
                                         <span class="badge bg-success px-2 py-1"><i class="bi bi-check-circle me-1"></i> Aprovado</span>
+                                        <div class="mt-1">
+                                            <span class="badge bg-light text-secondary border small fw-normal">{{ sub.current_tier_label or 'Homologado' }}</span>
+                                        </div>
                                     {% else %}
                                         <span class="badge bg-danger px-2 py-1"><i class="bi bi-x-circle me-1"></i> Rejeitado</span>
                                     {% endif %}
@@ -214,26 +218,45 @@
                                         {% endif %}
 
                                         <!-- Botões Aprovar / Rejeitar -->
-                                        {% if sub.status == 'pendente' and can_approve %}
-                                        <form action="{{ url_for('curadoria_action', sub_id=sub.id) }}" method="POST" class="d-inline">
-                                            <input type="hidden" name="action" value="approve">
-                                            <button type="submit" class="btn btn-sm btn-success py-1 px-2 rounded-3 fw-semibold">Aprovar</button>
-                                        </form>
-                                        <form action="{{ url_for('curadoria_action', sub_id=sub.id) }}" method="POST" class="d-inline">
-                                            <input type="hidden" name="action" value="reject">
-                                            <button type="submit" class="btn btn-sm btn-outline-danger py-1 px-2 rounded-3 fw-semibold">Rejeitar</button>
-                                        </form>
+                                        {% if sub.status == 'pendente' %}
+                                            {% if sub.can_approve %}
+                                            <form action="{{ url_for('curadoria_action', sub_id=sub.id) }}" method="POST" class="d-inline">
+                                                <input type="hidden" name="action" value="approve">
+                                                <button type="submit" class="btn btn-sm btn-success py-1 px-2 rounded-3 fw-semibold" title="Aprovar e homologar ocorrência">
+                                                    <i class="bi bi-check-lg me-1"></i>Aprovar
+                                                </button>
+                                            </form>
+                                            <form action="{{ url_for('curadoria_action', sub_id=sub.id) }}" method="POST" class="d-inline">
+                                                <input type="hidden" name="action" value="reject">
+                                                <button type="submit" class="btn btn-sm btn-outline-danger py-1 px-2 rounded-3 fw-semibold" title="Rejeitar ocorrência">
+                                                    <i class="bi bi-x-lg me-1"></i>Rejeitar
+                                                </button>
+                                            </form>
+                                            {% endif %}
+
+                                            <!-- Botão Escalar (Declaração de Indisponibilidade por Gestor) -->
+                                            {% if sub.can_escalate %}
+                                            <button type="button" class="btn btn-sm btn-warning text-dark py-1 px-2 rounded-3 fw-bold shadow-xs" data-bs-toggle="modal" data-bs-target="#escalateModal_{{ sub.id }}" title="Declarar indisponibilidade de agentes locais e transferir competência para {{ sub.target_tier_name }}">
+                                                <i class="bi bi-arrow-up-right-circle me-1"></i>Escalar
+                                            </button>
+                                            {% endif %}
+
+                                            {% if not sub.can_approve and not sub.can_escalate %}
+                                            <span class="badge bg-light text-secondary border px-2 py-1 text-wrap text-start" style="font-size: 9.5px; max-width: 140px;" title="{{ sub.is_waiting_reason }}">
+                                                <i class="bi bi-hourglass-split text-warning me-1"></i>{{ sub.is_waiting_reason }}
+                                            </span>
+                                            {% endif %}
                                         {% endif %}
 
                                         <!-- Editar Atributos -->
-                                        {% if can_edit %}
+                                        {% if sub.can_edit %}
                                         <button type="button" class="btn btn-sm btn-warning text-dark py-1 px-2 rounded-3 fw-semibold" data-bs-toggle="modal" data-bs-target="#editModal_{{ sub.id }}" title="Editar Dicionário de Dados">
                                             <i class="bi bi-pencil-square"></i>
                                         </button>
                                         {% endif %}
 
                                         <!-- Botão Excluir -->
-                                        {% if can_delete %}
+                                        {% if sub.can_delete %}
                                         <form action="{{ url_for('delete_occurrence', sub_id=sub.id) }}" method="POST" class="d-inline" onsubmit="return confirm('Deseja realmente excluir este ponto/submissão do sistema? Esta ação é permanente.');">
                                             <button type="submit" class="btn btn-sm btn-outline-danger py-1 px-2 rounded-3" title="Excluir do sistema">
                                                 <i class="bi bi-trash"></i>
@@ -241,7 +264,7 @@
                                         </form>
                                         {% endif %}
 
-                                        {% if not can_edit and not can_approve and not can_delete %}
+                                        {% if not sub.can_edit and not sub.can_approve and not sub.can_delete and not sub.can_escalate and sub.status != 'pendente' %}
                                         <button type="button" class="btn btn-sm btn-outline-secondary py-1 px-2 rounded-3 opacity-50" disabled title="Sem permissão para alterar este registro.">
                                             <i class="bi bi-lock-fill"></i>
                                         </button>
@@ -412,6 +435,46 @@
                                         </div>
                                       </div>
                                     </div>
+
+                                    <!-- MODAL ESCALAR OCORRÊNCIA (DECLARAÇÃO DE INDISPONIBILIDADE DE AGENTES) -->
+                                    {% if sub.can_escalate %}
+                                    <div class="modal fade text-start" id="escalateModal_{{ sub.id }}" tabindex="-1" aria-labelledby="escalateModalLabel_{{ sub.id }}" aria-hidden="true">
+                                      <div class="modal-dialog modal-dialog-centered">
+                                        <div class="modal-content rounded-4 border-0 shadow-lg overflow-hidden">
+                                          <form action="{{ url_for('curadoria_escalate', sub_id=sub.id) }}" method="POST">
+                                            <div class="modal-header bg-warning bg-opacity-25 border-bottom border-warning-subtle p-3">
+                                              <h5 class="modal-title fs-6 fw-bold text-dark" id="escalateModalLabel_{{ sub.id }}">
+                                                <i class="bi bi-shield-exclamation text-warning-emphasis me-2"></i>Escalar Ocorrência #{{ sub.id }} para {{ sub.target_tier_name }}
+                                              </h5>
+                                              <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+                                            </div>
+                                            <div class="modal-body p-4">
+                                              <div class="alert alert-warning border-0 rounded-3 small mb-3">
+                                                <p class="mb-1 fw-bold"><i class="bi bi-info-circle me-1"></i> Declaração Oficial de Indisponibilidade de Agentes Locais</p>
+                                                <p class="mb-0 text-muted">
+                                                  Ao confirmar, a responsabilidade de análise técnica da ocorrência <strong>#{{ sub.id }}</strong> ({{ sub.municipio or 'Angra dos Reis' }} - {{ sub.uf or 'RJ' }}) será transferida para a <strong>{{ sub.target_tier_name }}</strong>.
+                                                  Este ato administrativo será <strong>notarizado na Blockchain</strong>, gerando um novo bloco criptográfico, carimbo de tempo, IP de auditoria e QR Code atualizado.
+                                                </p>
+                                              </div>
+                                              <div class="mb-3">
+                                                <label class="form-label small fw-bold text-dark">Justificativa Técnica da Indisponibilidade de Agentes *</label>
+                                                <textarea name="motivo" class="form-control rounded-3" rows="3" required placeholder="Descreva formalmente a razão pela qual não há agentes locais disponíveis no momento (Ex: Todas as equipes em atendimento emergencial em campo no setor leste; sobrecarga operacional decorrente de chuva torrencial)..."></textarea>
+                                                <div class="form-text text-muted" style="font-size: 11px;">
+                                                  Ação exclusiva de <strong>Gestor</strong>. Sua matrícula, cargo e justificativa ficarão registrados imutavelmente no livro-razão.
+                                                </div>
+                                              </div>
+                                            </div>
+                                            <div class="modal-footer bg-light p-3 border-top-0">
+                                              <button type="button" class="btn btn-outline-secondary btn-sm rounded-pill px-3" data-bs-dismiss="modal">Cancelar</button>
+                                              <button type="submit" class="btn btn-warning btn-sm rounded-pill px-4 fw-bold shadow-sm">
+                                                <i class="bi bi-shield-check me-1"></i> Confirmar e Notarizar na Blockchain
+                                              </button>
+                                            </div>
+                                          </form>
+                                        </div>
+                                      </div>
+                                    </div>
+                                    {% endif %}
                                 </td>
                             </tr>
                             {% else %}

@@ -104,8 +104,34 @@ def get_db_connection():
     else:
         return DBWrapper(is_postgres=False)
 
+RJ_MUNICIPALITIES = [
+    'Angra dos Reis', 'Aperibé', 'Araruama', 'Areal', 'Armação dos Búzios', 'Arraial do Cabo',
+    'Barra Mansa', 'Barra do Piraí', 'Belford Roxo', 'Bom Jardim', 'Bom Jesus do Itabapoana',
+    'Cabo Frio', 'Cachoeiras de Macacu', 'Cambuci', 'Campos dos Goytacazes', 'Cantagalo',
+    'Carapebus', 'Cardoso Moreira', 'Carmo', 'Casimiro de Abreu', 'Comendador Levy Gasparian',
+    'Conceição de Macabu', 'Cordeiro', 'Duas Barras', 'Duque de Caxias',
+    'Engenheiro Paulo de Frontin', 'Guapimirim', 'Iguaba Grande', 'Itaboraí', 'Itaguaí',
+    'Italva', 'Itaocara', 'Itaperuna', 'Itatiaia', 'Japeri', 'Laje do Muriaé', 'Macaé',
+    'Macuco', 'Magé', 'Mangaratiba', 'Maricá', 'Mendes', 'Mesquita', 'Miguel Pereira',
+    'Miracema', 'Natividade', 'Nilópolis', 'Niterói', 'Nova Friburgo', 'Nova Iguaçu',
+    'Paracambi', 'Paraty', 'Paraíba do Sul', 'Paty do Alferes', 'Petrópolis', 'Pinheiral',
+    'Piraí', 'Porciúncula', 'Porto Real', 'Quatis', 'Queimados', 'Quissamã', 'Resende',
+    'Rio Bonito', 'Rio Claro', 'Rio das Flores', 'Rio das Ostras', 'Rio de Janeiro',
+    'Santa Maria Madalena', 'Santo Antônio de Pádua', 'Sapucaia', 'Saquarema', 'Seropédica',
+    'Silva Jardim', 'Sumidouro', 'São Fidélis', 'São Francisco de Itabapoana', 'São Gonçalo',
+    'São José de Ubá', 'São José do Vale do Rio Preto', 'São João da Barra', 'São João de Meriti',
+    'São Pedro da Aldeia', 'São Sebastião do Alto', 'Tanguá', 'Teresópolis', 'Trajano de Moraes',
+    'Três Rios', 'Valença', 'Varre-Sai', 'Vassouras', 'Volta Redonda'
+]
+
+BRAZIL_UFS = [
+    'AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA',
+    'MT', 'MS', 'MG', 'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN',
+    'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO'
+]
+
 class User(UserMixin):
-    def __init__(self, id, username, role, role_level='user', email='', nome_completo='', telefone='', matricula='', cpf='', funcao='agente'):
+    def __init__(self, id, username, role, role_level='user', email='', nome_completo='', telefone='', matricula='', cpf='', funcao='agente', municipio='Angra dos Reis', uf='RJ'):
         self.id = id
         self.username = username
         self.role = role
@@ -116,6 +142,8 @@ class User(UserMixin):
         self.matricula = matricula
         self.cpf = cpf
         self.funcao = funcao
+        self.municipio = municipio or 'Angra dos Reis'
+        self.uf = uf or 'RJ'
 
 @login_manager.user_loader
 def load_user(user_id):
@@ -134,7 +162,9 @@ def load_user(user_id):
             telefone=u.get('telefone', ''),
             matricula=u.get('matricula', ''),
             cpf=u.get('cpf', ''),
-            funcao=u.get('funcao', 'agente')
+            funcao=u.get('funcao', 'agente'),
+            municipio=u.get('municipio', 'Angra dos Reis'),
+            uf=u.get('uf', 'RJ')
         )
 def parse_coordinate_value(val):
     if val is None:
@@ -260,7 +290,9 @@ def upgrade_db():
         ('telefone', 'TEXT'),
         ('matricula', 'TEXT'),
         ('cpf', 'TEXT'),
-        ('funcao', "TEXT DEFAULT 'agente'")
+        ('funcao', "TEXT DEFAULT 'agente'"),
+        ('municipio', "TEXT DEFAULT 'Angra dos Reis'"),
+        ('uf', "TEXT DEFAULT 'RJ'")
     ]
     for col_name, col_def in user_columns:
         try:
@@ -296,7 +328,11 @@ def upgrade_db():
                 responsavel_nome TEXT,
                 responsavel_cpf TEXT,
                 responsavel_matricula TEXT,
-                responsavel_nivel TEXT
+                responsavel_nivel TEXT,
+                esfera_responsavel TEXT DEFAULT 'municipal',
+                escalado_por INTEGER,
+                motivo_escalacao TEXT,
+                data_escalacao TEXT
             )
         ''')
         conn.commit()
@@ -400,12 +436,14 @@ def upgrade_db():
 
     # Seed / Upsert default users
     default_users = [
-        ('admin', generate_password_hash('Admin@123'), 'admin', 'admin_geral', 'admin.geral@geoportal.gov.br', 'Administrador Geral MOVMASSA', '(24) 99999-0000', 'ADM-GERAL-001', '000.000.000-00', 'gestor_agente'),
-        ('defesa_nacional', generate_password_hash('Defesa@123'), 'admin', 'admin_nacional', 'nacional@defesacivil.gov.br', 'Agente Defesa Civil Nacional', '(61) 3333-1000', 'GOV-DCN-2026', '111.111.111-11', 'gestor_agente'),
-        ('defesa_estadual', generate_password_hash('Defesa@123'), 'admin', 'admin_estadual', 'estadual@defesacivil.rj.gov.br', 'Agente Defesa Civil Estadual RJ', '(21) 2222-2000', 'EST-DCE-2026', '222.222.222-22', 'gestor_agente'),
-        ('defesa_municipal', generate_password_hash('Defesa@123'), 'admin', 'admin_municipal', 'defesacivil@angra.rj.gov.br', 'Agente Defesa Civil Municipal Angra', '(24) 3365-3000', 'MUN-DCM-2026', '333.333.333-33', 'gestor_agente'),
-        ('org', generate_password_hash('Org@123'), 'org', 'org', 'contato@orgamb.org.br', 'Organização Técnica Ambientalista', '(24) 98888-4000', 'ORG-ANG-2026', '444.444.444-44', 'gestor_agente'),
-        ('user', generate_password_hash('User@123'), 'user', 'user', 'usuario@email.com', 'Usuário Comum de Campo', '(24) 97777-5000', 'N/A', '555.555.555-55', 'agente')
+        ('admin', generate_password_hash('Admin@123'), 'admin', 'admin_geral', 'admin.geral@geoportal.gov.br', 'Administrador Geral MOVMASSA', '(24) 99999-0000', 'ADM-GERAL-001', '000.000.000-00', 'gestor_agente', 'Angra dos Reis', 'RJ'),
+        ('defesa_nacional', generate_password_hash('Defesa@123'), 'admin', 'admin_nacional', 'nacional@defesacivil.gov.br', 'Gestora Defesa Civil Nacional', '(61) 3333-1000', 'GOV-DCN-2026', '111.111.111-11', 'gestor_agente', 'Brasília', 'DF'),
+        ('defesa_estadual', generate_password_hash('Defesa@123'), 'admin', 'admin_estadual', 'estadual@defesacivil.rj.gov.br', 'Gestora Defesa Civil Estadual RJ', '(21) 2222-2000', 'EST-DCE-2026', '222.222.222-22', 'gestor_agente', 'Rio de Janeiro', 'RJ'),
+        ('defesa_municipal', generate_password_hash('Defesa@123'), 'admin', 'admin_municipal', 'defesacivil@angra.rj.gov.br', 'Gestora Defesa Civil Municipal Angra', '(24) 3365-3000', 'MUN-DCM-2026', '333.333.333-33', 'gestor_agente', 'Angra dos Reis', 'RJ'),
+        ('defesa_rio', generate_password_hash('Defesa@123'), 'admin', 'admin_municipal', 'defesacivil@rio.rj.gov.br', 'Gestor Defesa Civil Municipal Rio de Janeiro', '(21) 2222-3333', 'MUN-RIO-2026', '666.666.666-66', 'gestor_agente', 'Rio de Janeiro', 'RJ'),
+        ('defesa_petropolis', generate_password_hash('Defesa@123'), 'admin', 'admin_municipal', 'defesacivil@petropolis.rj.gov.br', 'Gestor Defesa Civil Municipal Petrópolis', '(24) 2246-9000', 'MUN-PET-2026', '777.777.777-77', 'gestor_agente', 'Petrópolis', 'RJ'),
+        ('org', generate_password_hash('Org@123'), 'org', 'org', 'contato@orgamb.org.br', 'Organização Técnica Ambientalista', '(24) 98888-4000', 'ORG-ANG-2026', '444.444.444-44', 'gestor_agente', 'Angra dos Reis', 'RJ'),
+        ('user', generate_password_hash('User@123'), 'user', 'user', 'usuario@email.com', 'Usuário Comum de Campo', '(24) 97777-5000', 'N/A', '555.555.555-55', 'agente', 'Angra dos Reis', 'RJ')
     ]
     for u in default_users:
         try:
@@ -414,25 +452,25 @@ def upgrade_db():
             if not existing:
                 try:
                     conn.execute('''
-                        INSERT INTO users (username, password, password_hash, role, role_level, email, nome_completo, telefone, matricula, cpf, funcao)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ''', (u[0], u[1], u[1], u[2], u[3], u[4], u[5], u[6], u[7], u[8], u[9]))
+                        INSERT INTO users (username, password, password_hash, role, role_level, email, nome_completo, telefone, matricula, cpf, funcao, municipio, uf)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (u[0], u[1], u[1], u[2], u[3], u[4], u[5], u[6], u[7], u[8], u[9], u[10], u[11]))
                 except Exception:
                     conn.rollback()
                     conn.execute('''
-                        INSERT INTO users (username, password_hash, role, role_level, email, nome_completo, telefone, matricula, cpf, funcao)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ''', (u[0], u[1], u[2], u[3], u[4], u[5], u[6], u[7], u[8], u[9]))
+                        INSERT INTO users (username, password_hash, role, role_level, email, nome_completo, telefone, matricula, cpf, funcao, municipio, uf)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (u[0], u[1], u[2], u[3], u[4], u[5], u[6], u[7], u[8], u[9], u[10], u[11]))
             else:
                 try:
                     conn.execute('''
-                        UPDATE users SET password = ?, password_hash = ?, role = ?, role_level = ?, funcao = ? WHERE username = ?
-                    ''', (u[1], u[1], u[2], u[3], u[9], uname))
+                        UPDATE users SET password = ?, password_hash = ?, role = ?, role_level = ?, funcao = ?, municipio = ?, uf = ? WHERE username = ?
+                    ''', (u[1], u[1], u[2], u[3], u[9], u[10], u[11], uname))
                 except Exception:
                     conn.rollback()
                     conn.execute('''
-                        UPDATE users SET password_hash = ?, role = ?, role_level = ?, funcao = ? WHERE username = ?
-                    ''', (u[1], u[2], u[3], u[9], uname))
+                        UPDATE users SET password_hash = ?, role = ?, role_level = ?, funcao = ?, municipio = ?, uf = ? WHERE username = ?
+                    ''', (u[1], u[2], u[3], u[9], u[10], u[11], uname))
             conn.commit()
         except Exception as e:
             conn.rollback()
@@ -591,7 +629,11 @@ def upgrade_db():
         ('telefone_contato', 'TEXT'),
         ('email_contato', 'TEXT'),
         ('ip_origem', 'TEXT'),
-        ('qrcode_filename', 'TEXT')
+        ('qrcode_filename', 'TEXT'),
+        ('esfera_responsavel', "TEXT DEFAULT 'municipal'"),
+        ('escalado_por', 'INTEGER'),
+        ('motivo_escalacao', 'TEXT'),
+        ('data_escalacao', 'TEXT')
     ]
     for col, col_type in sub_cols:
         try:
@@ -599,6 +641,12 @@ def upgrade_db():
             conn.commit()
         except Exception:
             conn.rollback()
+
+    try:
+        conn.execute("UPDATE submissions SET esfera_responsavel = 'municipal' WHERE esfera_responsavel IS NULL OR esfera_responsavel = ''")
+        conn.commit()
+    except Exception:
+        conn.rollback()
 
     # Seed de ocorrências oficiais da Curadoria caso o banco esteja vazio
     seed_initial_curadoria(conn)
@@ -1141,7 +1189,10 @@ def login():
                 'nome_completo': 'Administrador Geral MOVMASSA',
                 'telefone': '(24) 99999-0000',
                 'matricula': 'ADM-GERAL-001',
-                'cpf': '000.000.000-00'
+                'cpf': '000.000.000-00',
+                'funcao': 'gestor_agente',
+                'municipio': 'Angra dos Reis',
+                'uf': 'RJ'
             },
             'defesa_nacional': {
                 'username': 'defesa_nacional',
@@ -1149,10 +1200,13 @@ def login():
                 'role': 'admin',
                 'role_level': 'admin_nacional',
                 'email': 'nacional@defesacivil.gov.br',
-                'nome_completo': 'Agente Defesa Civil Nacional',
+                'nome_completo': 'Gestora Defesa Civil Nacional',
                 'telefone': '(61) 3333-1000',
                 'matricula': 'GOV-DCN-2026',
-                'cpf': '111.111.111-11'
+                'cpf': '111.111.111-11',
+                'funcao': 'gestor_agente',
+                'municipio': 'Brasília',
+                'uf': 'DF'
             },
             'defesa_estadual': {
                 'username': 'defesa_estadual',
@@ -1160,10 +1214,13 @@ def login():
                 'role': 'admin',
                 'role_level': 'admin_estadual',
                 'email': 'estadual@defesacivil.rj.gov.br',
-                'nome_completo': 'Agente Defesa Civil Estadual RJ',
+                'nome_completo': 'Gestora Defesa Civil Estadual RJ',
                 'telefone': '(21) 2222-2000',
                 'matricula': 'EST-DCE-2026',
-                'cpf': '222.222.222-22'
+                'cpf': '222.222.222-22',
+                'funcao': 'gestor_agente',
+                'municipio': 'Rio de Janeiro',
+                'uf': 'RJ'
             },
             'defesa_municipal': {
                 'username': 'defesa_municipal',
@@ -1171,10 +1228,41 @@ def login():
                 'role': 'admin',
                 'role_level': 'admin_municipal',
                 'email': 'defesacivil@angra.rj.gov.br',
-                'nome_completo': 'Agente Defesa Civil Municipal Angra',
+                'nome_completo': 'Gestora Defesa Civil Municipal Angra',
                 'telefone': '(24) 3365-3000',
                 'matricula': 'MUN-DCM-2026',
-                'cpf': '333.333.333-33'
+                'cpf': '333.333.333-33',
+                'funcao': 'gestor_agente',
+                'municipio': 'Angra dos Reis',
+                'uf': 'RJ'
+            },
+            'defesa_rio': {
+                'username': 'defesa_rio',
+                'passwords': ['Defesa@123', 'defesa123', 'defesa'],
+                'role': 'admin',
+                'role_level': 'admin_municipal',
+                'email': 'defesacivil@rio.rj.gov.br',
+                'nome_completo': 'Gestor Defesa Civil Municipal Rio de Janeiro',
+                'telefone': '(21) 2222-3333',
+                'matricula': 'MUN-RIO-2026',
+                'cpf': '666.666.666-66',
+                'funcao': 'gestor_agente',
+                'municipio': 'Rio de Janeiro',
+                'uf': 'RJ'
+            },
+            'defesa_petropolis': {
+                'username': 'defesa_petropolis',
+                'passwords': ['Defesa@123', 'defesa123', 'defesa'],
+                'role': 'admin',
+                'role_level': 'admin_municipal',
+                'email': 'defesacivil@petropolis.rj.gov.br',
+                'nome_completo': 'Gestor Defesa Civil Municipal Petrópolis',
+                'telefone': '(24) 2246-9000',
+                'matricula': 'MUN-PET-2026',
+                'cpf': '777.777.777-77',
+                'funcao': 'gestor_agente',
+                'municipio': 'Petrópolis',
+                'uf': 'RJ'
             },
             'org': {
                 'username': 'org',
@@ -1185,7 +1273,10 @@ def login():
                 'nome_completo': 'Organização Técnica Ambientalista',
                 'telefone': '(24) 98888-4000',
                 'matricula': 'ORG-ANG-2026',
-                'cpf': '444.444.444-44'
+                'cpf': '444.444.444-44',
+                'funcao': 'gestor_agente',
+                'municipio': 'Angra dos Reis',
+                'uf': 'RJ'
             },
             'user': {
                 'username': 'user',
@@ -1196,7 +1287,10 @@ def login():
                 'nome_completo': 'Usuário Comum de Campo',
                 'telefone': '(24) 97777-5000',
                 'matricula': 'N/A',
-                'cpf': '555.555.555-55'
+                'cpf': '555.555.555-55',
+                'funcao': 'agente',
+                'municipio': 'Angra dos Reis',
+                'uf': 'RJ'
             }
         }
         
@@ -1222,21 +1316,27 @@ def login():
                 if u_dict:
                     try:
                         conn.execute('''
-                            UPDATE users SET password = ?, password_hash = ?, role = ?, role_level = ? WHERE id = ?
-                        ''', (new_hash, new_hash, meta['role'], meta['role_level'], u_dict['id']))
+                            UPDATE users SET password = ?, password_hash = ?, role = ?, role_level = ?, funcao = ?, municipio = ?, uf = ? WHERE id = ?
+                        ''', (new_hash, new_hash, meta['role'], meta['role_level'], meta.get('funcao', 'gestor_agente'), meta.get('municipio', 'Angra dos Reis'), meta.get('uf', 'RJ'), u_dict['id']))
                         conn.commit()
                         u_dict['password_hash'] = new_hash
+                        u_dict['role'] = meta['role']
+                        u_dict['role_level'] = meta['role_level']
+                        u_dict['funcao'] = meta.get('funcao', 'gestor_agente')
+                        u_dict['municipio'] = meta.get('municipio', 'Angra dos Reis')
+                        u_dict['uf'] = meta.get('uf', 'RJ')
                     except Exception as e:
                         conn.rollback()
                         print("Erro ao atualizar hash base:", e)
                 else:
                     try:
                         conn.execute('''
-                            INSERT INTO users (username, password, password_hash, role, role_level, email, nome_completo, telefone, matricula, cpf)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            INSERT INTO users (username, password, password_hash, role, role_level, email, nome_completo, telefone, matricula, cpf, funcao, municipio, uf)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         ''', (
                             meta['username'], new_hash, new_hash, meta['role'], meta['role_level'],
-                            meta['email'], meta['nome_completo'], meta['telefone'], meta['matricula'], meta['cpf']
+                            meta['email'], meta['nome_completo'], meta['telefone'], meta['matricula'], meta['cpf'],
+                            meta.get('funcao', 'gestor_agente'), meta.get('municipio', 'Angra dos Reis'), meta.get('uf', 'RJ')
                         ))
                         conn.commit()
                         inserted = conn.execute('SELECT * FROM users WHERE LOWER(username) = LOWER(?)', (meta['username'],)).fetchone()
@@ -1262,7 +1362,9 @@ def login():
                 telefone=u_dict.get('telefone', ''),
                 matricula=u_dict.get('matricula', ''),
                 cpf=u_dict.get('cpf', ''),
-                funcao=u_dict.get('funcao', 'agente')
+                funcao=u_dict.get('funcao', 'agente'),
+                municipio=u_dict.get('municipio', 'Angra dos Reis'),
+                uf=u_dict.get('uf', 'RJ')
             )
             login_user(user_obj)
             flash(f'Bem-vindo, {user_obj.nome_completo or user_obj.username}!', 'success')
@@ -1470,16 +1572,19 @@ def upload_point():
     media_json_str = json.dumps(media_list) if media_list else None
     media_filename = media_list[0] if media_list else None
         
+    municipio_val = request.form.get('municipio', '').strip() or (getattr(current_user, 'municipio', 'Angra dos Reis') if current_user.is_authenticated else 'Angra dos Reis')
+    uf_val = request.form.get('uf', '').strip().upper() or (getattr(current_user, 'uf', 'RJ') if current_user.is_authenticated else 'RJ')
+
     conn = get_db_connection()
     cur = conn.execute('''
         INSERT INTO submissions (
             user_id, title, description, submission_type, lat, lng, media_filename, media_files_json, filename, data_evento, municipio, uf,
             origem, responsavel_nome, responsavel_cpf, responsavel_matricula, responsavel_nivel,
-            telefone_contato, email_contato, ip_origem
+            telefone_contato, email_contato, ip_origem, esfera_responsavel
         ) 
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'municipal')
     ''', (
-        user_id, title or 'Ocorrência Reportada em Campo', description, 'point', lat, lng, media_filename, media_json_str, '', data_evento, 'Angra dos Reis', 'RJ',
+        user_id, title or 'Ocorrência Reportada em Campo', description, 'point', lat, lng, media_filename, media_json_str, '', data_evento, municipio_val, uf_val,
         'Curadoria',
         responsavel_nome,
         responsavel_cpf,
@@ -2116,16 +2221,117 @@ def api_blockchain_ledger():
         'chain': [dict(b) for b in blocks]
     })
 
-# --- Curadoria ---
+# --- Curadoria & Hierarquia Federativa da Defesa Civil ---
+
+def check_curadoria_permissions(sub, user):
+    """
+    Determina permissões hierárquicas de Curadoria para o usuário sobre a submissão.
+    Hierarquia:
+      1. Esfera Municipal: Defesa Civil do Município da ocorrência (Angra dos Reis, Rio de Janeiro, Petrópolis, etc.)
+         - Se indisponível, apenas o GESTOR Municipal pode escalar para a Defesa Civil Estadual.
+      2. Esfera Estadual: Defesa Civil Estadual do Estado da ocorrência (ex: RJ, SP, etc.)
+         - Se indisponível, apenas o GESTOR Estadual pode escalar para a Defesa Civil Nacional.
+      3. Esfera Nacional: Defesa Civil Nacional (Governo Federal).
+      4. Admin Geral: Acesso e autoridade plena de curadoria e escalação em qualquer nível.
+    """
+    sub_dict = dict(sub) if sub else {}
+    sub_esfera = (sub_dict.get('esfera_responsavel') or 'municipal').strip().lower()
+    sub_municipio = (sub_dict.get('municipio') or 'Angra dos Reis').strip()
+    sub_uf = (sub_dict.get('uf') or 'RJ').strip()
+    sub_status = sub_dict.get('status', 'pendente')
+    sub_user_id = sub_dict.get('user_id')
+
+    u_role_level = getattr(user, 'role_level', 'user') or 'user'
+    u_funcao = getattr(user, 'funcao', 'agente') or 'agente'
+    is_admin_geral = (u_role_level == 'admin_geral')
+    is_gestor = (user.role in ['admin', 'org'] or u_funcao in ['gestor', 'gestor_agente'])
+    is_owner = (user.id == sub_user_id) if (user.is_authenticated and sub_user_id) else False
+    u_municipio = (getattr(user, 'municipio', 'Angra dos Reis') or 'Angra dos Reis').strip()
+    u_uf = (getattr(user, 'uf', 'RJ') or 'RJ').strip()
+
+    can_approve = False
+    can_escalate = False
+    escalate_target = None
+    target_tier_name = None
+    is_waiting_reason = ""
+    current_tier_label = ""
+
+    if sub_esfera == 'municipal':
+        current_tier_label = f"Municipal ({sub_municipio})"
+    elif sub_esfera == 'estadual':
+        current_tier_label = f"Estadual ({sub_uf})"
+    else:
+        current_tier_label = "Nacional (Brasil)"
+
+    if sub_status == 'pendente':
+        if is_admin_geral:
+            can_approve = True
+            if sub_esfera == 'municipal':
+                can_escalate = True
+                escalate_target = 'estadual'
+                target_tier_name = f"Defesa Civil Estadual ({sub_uf})"
+            elif sub_esfera == 'estadual':
+                can_escalate = True
+                escalate_target = 'nacional'
+                target_tier_name = "Defesa Civil Nacional (Governo Federal)"
+        elif sub_esfera == 'municipal':
+            matches_city = (u_municipio.lower() == sub_municipio.lower())
+            if 'municipal' in u_role_level and matches_city:
+                can_approve = True
+                if is_gestor:
+                    can_escalate = True
+                    escalate_target = 'estadual'
+                    target_tier_name = f"Defesa Civil Estadual ({sub_uf})"
+                else:
+                    can_escalate = False
+            else:
+                is_waiting_reason = f"Aguardando validação da Defesa Civil Municipal de {sub_municipio}."
+        elif sub_esfera == 'estadual':
+            matches_uf = (u_uf.upper() == sub_uf.upper())
+            if 'estadual' in u_role_level and matches_uf:
+                can_approve = True
+                if is_gestor:
+                    can_escalate = True
+                    escalate_target = 'nacional'
+                    target_tier_name = "Defesa Civil Nacional (Governo Federal)"
+                else:
+                    can_escalate = False
+            else:
+                is_waiting_reason = f"Aguardando validação da Defesa Civil Estadual ({sub_uf}) após escalação municipal."
+        elif sub_esfera == 'nacional':
+            if 'nacional' in u_role_level:
+                can_approve = True
+            else:
+                is_waiting_reason = "Aguardando validação da Defesa Civil Nacional (Governo Federal) após escalação."
+
+    can_edit = is_admin_geral or can_approve or is_owner
+    can_delete = is_admin_geral or can_approve or is_owner
+
+    return {
+        'sub_esfera': sub_esfera,
+        'sub_municipio': sub_municipio,
+        'sub_uf': sub_uf,
+        'can_approve': can_approve,
+        'can_escalate': can_escalate,
+        'escalate_target': escalate_target,
+        'target_tier_name': target_tier_name,
+        'current_tier_label': current_tier_label,
+        'is_waiting_reason': is_waiting_reason,
+        'can_edit': can_edit,
+        'can_delete': can_delete,
+        'is_admin_geral': is_admin_geral,
+        'is_gestor': is_gestor,
+        'is_owner': is_owner
+    }
 
 @app.route('/curadoria')
 @login_required
 def curadoria():
     conn = get_db_connection()
     rows = conn.execute('''
-        SELECT s.*, u.username, u.role_level as u_role_level
+        SELECT s.*, u.username, u.role_level as u_role_level, u.municipio as u_municipio, u.uf as u_uf
         FROM submissions s 
-        JOIN users u ON s.user_id = u.id 
+        LEFT JOIN users u ON s.user_id = u.id 
         ORDER BY s.timestamp DESC
     ''').fetchall()
     conn.close()
@@ -2143,18 +2349,101 @@ def curadoria():
         if r_dict.get('media_filename') and r_dict['media_filename'] not in m_list:
             m_list.insert(0, r_dict['media_filename'])
         r_dict['media_files_list'] = m_list
+        
+        perms = check_curadoria_permissions(r_dict, current_user)
+        r_dict.update(perms)
         submissions.append(r_dict)
     
     return render_template('curadoria.html', submissions=submissions)
+
+@app.route('/curadoria/escalate/<int:sub_id>', methods=['POST'])
+@login_required
+def curadoria_escalate(sub_id):
+    motivo = request.form.get('motivo', '').strip()
+    if not motivo:
+        flash('É obrigatório informar a justificativa técnica / declaração de indisponibilidade de agentes para realizar a escalação.', 'danger')
+        return redirect(url_for('curadoria'))
+
+    conn = get_db_connection()
+    submission = conn.execute('''
+        SELECT s.*, u.role_level as u_role_level, u.municipio as u_municipio, u.uf as u_uf
+        FROM submissions s 
+        LEFT JOIN users u ON s.user_id = u.id 
+        WHERE s.id = ?
+    ''', (sub_id,)).fetchone()
+
+    if not submission:
+        conn.close()
+        flash('Submissão não encontrada.', 'danger')
+        return redirect(url_for('curadoria'))
+
+    perms = check_curadoria_permissions(submission, current_user)
+    if not perms['can_escalate']:
+        conn.close()
+        flash(f'Acesso negado. Apenas gestores responsáveis pela esfera atual possuem atribuição para escalar ocorrências. {perms["is_waiting_reason"]}', 'danger')
+        return redirect(url_for('curadoria'))
+
+    target_tier = perms['escalate_target']
+    now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+    if target_tier == 'estadual':
+        action_type = 'ESCALACAO_ESTADUAL'
+        summary = f"Declaração de Indisponibilidade de Agentes: Gestor Municipal da Defesa Civil de {perms['sub_municipio']} declarou ausência de efetivo e acionou a Defesa Civil Estadual ({perms['sub_uf']}). Motivo: {motivo}"
+    elif target_tier == 'nacional':
+        action_type = 'ESCALACAO_NACIONAL'
+        summary = f"Declaração de Indisponibilidade de Agentes: Gestor Estadual da Defesa Civil ({perms['sub_uf']}) declarou ausência de efetivo e acionou a Defesa Civil Nacional (Governo Federal). Motivo: {motivo}"
+    else:
+        conn.close()
+        flash('Não há esfera superior disponível para escalação deste registro.', 'warning')
+        return redirect(url_for('curadoria'))
+
+    conn.execute('''
+        UPDATE submissions 
+        SET esfera_responsavel = ?,
+            escalado_por = ?,
+            motivo_escalacao = ?,
+            data_escalacao = ?
+        WHERE id = ?
+    ''', (target_tier, current_user.id, motivo, now_str, sub_id))
+    conn.commit()
+
+    # Notarização em Blockchain com novo hash e novo QR Code
+    b_res = None
+    try:
+        client_ip = get_client_ip()
+        b_res = blockchain_engine.notarize_record(
+            conn,
+            sub_id,
+            curator_user=current_user,
+            action_type=action_type,
+            changes_summary=summary,
+            ip_origem=client_ip,
+            host_url=request.host_url,
+            upload_folder=app.config['UPLOAD_FOLDER']
+        )
+    except Exception as e:
+        print("[!] Erro na notarização de escalação:", e)
+
+    conn.close()
+
+    try:
+        import threading
+        threading.Thread(target=sync_with_cloud, daemon=True).start()
+    except Exception:
+        pass
+
+    blk_msg = f" (Bloco Blockchain #{b_res['block_index']} e novo QR Code gerado)" if b_res else ""
+    flash(f'Ocorrência #{sub_id} escalada com sucesso para a {perms["target_tier_name"]}!{blk_msg}', 'success')
+    return redirect(url_for('curadoria'))
 
 @app.route('/curadoria/update/<int:sub_id>', methods=['POST'])
 @login_required
 def curadoria_update(sub_id):
     conn = get_db_connection()
     sub = conn.execute('''
-        SELECT s.*, u.role_level as u_role_level 
+        SELECT s.*, u.role_level as u_role_level, u.municipio as u_municipio, u.uf as u_uf
         FROM submissions s 
-        JOIN users u ON s.user_id = u.id 
+        LEFT JOIN users u ON s.user_id = u.id 
         WHERE s.id = ?
     ''', (sub_id,)).fetchone()
     
@@ -2162,19 +2451,10 @@ def curadoria_update(sub_id):
         conn.close()
         return jsonify({'error': 'Submission not found'}), 404
 
-    is_admin_geral = (current_user.role_level == 'admin_geral')
-    is_gestor = (current_user.role in ['admin', 'org'] or getattr(current_user, 'funcao', 'agente') in ['gestor', 'gestor_agente'])
-    is_owner = (current_user.id == sub['user_id'])
-    
-    sub_sphere = sub['responsavel_nivel'] or sub['u_role_level'] or ''
-    u_sphere = (current_user.role_level or '').replace('agente_', 'admin_')
-    s_sphere = sub_sphere.replace('agente_', 'admin_')
-    is_same_sphere = (u_sphere == s_sphere)
-
-    can_edit = is_admin_geral or (is_gestor and is_same_sphere) or is_owner
-    if not can_edit:
+    perms = check_curadoria_permissions(sub, current_user)
+    if not perms['can_edit']:
         conn.close()
-        return jsonify({'error': 'Unauthorized'}), 403
+        return jsonify({'error': f'Unauthorized: Você não possui permissão para editar este registro. {perms["is_waiting_reason"]}'}), 403
         
     f = request.form
     client_ip = get_client_ip()
@@ -2326,9 +2606,9 @@ def curadoria_action(sub_id):
     
     conn = get_db_connection()
     submission = conn.execute('''
-        SELECT s.*, u.role_level as u_role_level 
+        SELECT s.*, u.role_level as u_role_level, u.municipio as u_municipio, u.uf as u_uf
         FROM submissions s 
-        JOIN users u ON s.user_id = u.id 
+        LEFT JOIN users u ON s.user_id = u.id 
         WHERE s.id = ?
     ''', (sub_id,)).fetchone()
     
@@ -2336,19 +2616,14 @@ def curadoria_action(sub_id):
         conn.close()
         return jsonify({'error': 'Submission not found'}), 404
 
-    is_admin_geral = (current_user.role_level == 'admin_geral')
-    is_gestor = (current_user.role in ['admin', 'org'] or getattr(current_user, 'funcao', 'agente') in ['gestor', 'gestor_agente'])
-    
-    sub_sphere = submission['responsavel_nivel'] or submission['u_role_level'] or ''
-    u_sphere = (current_user.role_level or '').replace('agente_', 'admin_')
-    s_sphere = sub_sphere.replace('agente_', 'admin_')
-    is_same_sphere = (u_sphere == s_sphere)
-
-    can_approve = is_admin_geral or (is_gestor and is_same_sphere)
-    if not can_approve:
+    perms = check_curadoria_permissions(submission, current_user)
+    if not perms['can_approve']:
         conn.close()
-        return jsonify({'error': 'Unauthorized: Apenas gestores podem aprovar ou rejeitar submissões.'}), 403
+        return jsonify({'error': f'Unauthorized: Você não possui autoridade para homologar esta ocorrência. {perms["is_waiting_reason"]}'}), 403
         
+    sub_dict = dict(submission)
+    sub_esfera = perms['sub_esfera']
+
     if action == 'approve':
         conn.execute('''
             UPDATE submissions 
@@ -2367,7 +2642,6 @@ def curadoria_action(sub_id):
             sub_id
         ))
         
-        sub_dict = dict(submission)
         if sub_dict.get('submission_type') == 'layer':
             conn.execute('INSERT INTO layers (name, filename, category, is_active) VALUES (?, ?, ?, 1)',
                          (submission['title'], submission['filename'], 'Contribuição de Usuários'))
@@ -2375,12 +2649,14 @@ def curadoria_action(sub_id):
         # Notarização Criptográfica de Aprovação no Blockchain (Gera novo bloco e novo QR Code)
         try:
             client_ip = get_client_ip()
+            action_type = f"APROVACAO_CURADORIA_{sub_esfera.upper()}"
+            changes_summary = f"Homologação técnica oficial na Curadoria pela {perms['current_tier_label']}. Parecer: {feedback or 'Aprovado sem ressalvas'}"
             b_res = blockchain_engine.notarize_record(
                 conn,
                 sub_id,
                 curator_user=current_user,
-                action_type='APROVACAO_CURADORIA',
-                changes_summary=f"Homologação técnica oficial na Curadoria. Parecer: {feedback or 'Aprovado sem ressalvas'}",
+                action_type=action_type,
+                changes_summary=changes_summary,
                 ip_origem=client_ip,
                 host_url=request.host_url,
                 upload_folder=app.config['UPLOAD_FOLDER']
@@ -2396,7 +2672,21 @@ def curadoria_action(sub_id):
     elif action == 'reject':
         conn.execute('UPDATE submissions SET status = ?, feedback = ? WHERE id = ?', ('rejeitado', feedback, sub_id))
         conn.commit()
-        flash('Submissão rejeitada.', 'warning')
+        try:
+            client_ip = get_client_ip()
+            blockchain_engine.notarize_record(
+                conn,
+                sub_id,
+                curator_user=current_user,
+                action_type='REJEICAO_CURADORIA',
+                changes_summary=f"Ocorrência indeferida pela Curadoria ({perms['current_tier_label']}). Motivo: {feedback or 'Inconsistência técnica'}",
+                ip_origem=client_ip,
+                host_url=request.host_url,
+                upload_folder=app.config['UPLOAD_FOLDER']
+            )
+        except Exception as b_err:
+            print("Aviso ao notarizar rejeição:", b_err)
+        flash('Submissão rejeitada na Curadoria.', 'warning')
         
     conn.close()
     
@@ -2411,126 +2701,101 @@ def curadoria_action(sub_id):
 @app.route('/curadoria/approve_all', methods=['POST'])
 @login_required
 def curadoria_approve_all():
-    is_admin_geral = (current_user.role_level == 'admin_geral')
-    is_gestor = (current_user.role in ['admin', 'org'] or getattr(current_user, 'funcao', 'agente') in ['gestor', 'gestor_agente'])
-    if not (is_admin_geral or is_gestor):
-        flash('Acesso negado. Apenas gestores podem realizar esta ação.', 'danger')
-        return redirect(url_for('curadoria'))
-
     conn = get_db_connection()
-    u_sphere = (current_user.role_level or '').replace('agente_', 'admin_')
+    rows = conn.execute('''
+        SELECT s.*, u.role_level as u_role_level, u.municipio as u_municipio, u.uf as u_uf 
+        FROM submissions s 
+        LEFT JOIN users u ON s.user_id = u.id 
+        WHERE s.status = 'pendente'
+    ''').fetchall()
 
-    sub_ids_to_approve = []
-    if is_admin_geral:
-        rows = conn.execute("SELECT id, submission_type, title, filename FROM submissions WHERE status = 'pendente'").fetchall()
-        for r in rows:
-            sub_ids_to_approve.append(r['id'])
-            if r['submission_type'] == 'layer':
-                conn.execute('INSERT INTO layers (name, filename, category, is_active) VALUES (?, ?, ?, 1)',
-                             (r['title'], r['filename'], 'Contribuição de Usuários'))
+    approved_count = 0
+    client_ip = get_client_ip()
 
-        conn.execute('''
-            UPDATE submissions 
-            SET status = 'aprovado', origem = 'Curadoria',
-                responsavel_nome = COALESCE(responsavel_nome, ?),
-                responsavel_cpf = COALESCE(responsavel_cpf, ?),
-                responsavel_matricula = COALESCE(responsavel_matricula, ?),
-                responsavel_nivel = COALESCE(responsavel_nivel, ?)
-            WHERE status = 'pendente'
-        ''', (
-            current_user.nome_completo or current_user.username,
-            current_user.cpf or 'N/A',
-            current_user.matricula or 'N/A',
-            current_user.role_level or current_user.role
-        ))
-    else:
-        rows = conn.execute('''
-            SELECT s.id, s.submission_type, s.title, s.filename, s.responsavel_nivel, u.role_level as u_role_level 
-            FROM submissions s JOIN users u ON s.user_id = u.id 
-            WHERE s.status = 'pendente'
-        ''').fetchall()
-        for r in rows:
-            r_sphere = (r['responsavel_nivel'] or r['u_role_level'] or '').replace('agente_', 'admin_')
-            if r_sphere == u_sphere:
-                sub_ids_to_approve.append(r['id'])
-                if r['submission_type'] == 'layer':
-                    conn.execute('INSERT INTO layers (name, filename, category, is_active) VALUES (?, ?, ?, 1)',
-                                 (r['title'], r['filename'], 'Contribuição de Usuários'))
-        
-        if sub_ids_to_approve:
-            placeholders = ','.join(['?'] * len(sub_ids_to_approve))
-            conn.execute(f'''
+    for r in rows:
+        perms = check_curadoria_permissions(r, current_user)
+        if perms['can_approve']:
+            sub_id = r['id']
+            sub_esfera = perms['sub_esfera']
+            conn.execute('''
                 UPDATE submissions 
                 SET status = 'aprovado', origem = 'Curadoria',
                     responsavel_nome = COALESCE(responsavel_nome, ?),
                     responsavel_cpf = COALESCE(responsavel_cpf, ?),
                     responsavel_matricula = COALESCE(responsavel_matricula, ?),
                     responsavel_nivel = COALESCE(responsavel_nivel, ?)
-                WHERE id IN ({placeholders})
-            ''', [
+                WHERE id = ?
+            ''', (
                 current_user.nome_completo or current_user.username,
                 current_user.cpf or 'N/A',
                 current_user.matricula or 'N/A',
-                current_user.role_level or current_user.role
-            ] + sub_ids_to_approve)
+                current_user.role_level or current_user.role,
+                sub_id
+            ))
+            if r['submission_type'] == 'layer':
+                conn.execute('INSERT INTO layers (name, filename, category, is_active) VALUES (?, ?, ?, 1)',
+                             (r['title'], r['filename'], 'Contribuição de Usuários'))
+            try:
+                blockchain_engine.notarize_record(
+                    conn,
+                    sub_id,
+                    curator_user=current_user,
+                    action_type=f"APROVACAO_CURADORIA_{sub_esfera.upper()}",
+                    changes_summary=f"Aprovação em lote por Gestor ({perms['current_tier_label']})",
+                    ip_origem=client_ip,
+                    host_url=request.host_url,
+                    upload_folder=app.config['UPLOAD_FOLDER']
+                )
+            except Exception as b_err:
+                print("Aviso ao notarizar aprovação em lote:", b_err)
+            approved_count += 1
 
     conn.commit()
-
-    # Notarizar em lote no Blockchain cada aprovação gerando seu novo QR Code
-    client_ip = get_client_ip()
-    for s_id in sub_ids_to_approve:
-        try:
-            blockchain_engine.notarize_record(
-                conn,
-                s_id,
-                curator_user=current_user,
-                action_type='APROVACAO_CURADORIA',
-                changes_summary='Aprovação em lote por Gestor de Curadoria',
-                ip_origem=client_ip,
-                host_url=request.host_url,
-                upload_folder=app.config['UPLOAD_FOLDER']
-            )
-        except Exception:
-            pass
-
     conn.close()
 
-    flash('Submissões pendentes aprovadas com sucesso!', 'success')
+    try:
+        import threading
+        threading.Thread(target=sync_with_cloud, daemon=True).start()
+    except Exception:
+        pass
+
+    if approved_count > 0:
+        flash(f'{approved_count} submissões sob sua jurisdição foram APROVADAS e NOTARIZADAS no Blockchain!', 'success')
+    else:
+        flash('Nenhuma ocorrência pendente sob sua jurisdição para aprovação.', 'info')
+
     return redirect(url_for('curadoria'))
 
 @app.route('/curadoria/delete_all', methods=['POST'])
 @login_required
 def curadoria_delete_all():
-    is_admin_geral = (current_user.role_level == 'admin_geral')
-    is_gestor = (current_user.role in ['admin', 'org'] or getattr(current_user, 'funcao', 'agente') in ['gestor', 'gestor_agente'])
-    if not (is_admin_geral or is_gestor):
-        flash('Acesso negado. Apenas gestores podem realizar esta ação.', 'danger')
-        return redirect(url_for('curadoria'))
-
     conn = get_db_connection()
-    if is_admin_geral:
-        conn.execute("DELETE FROM submissions WHERE submission_type = 'point'")
-    else:
-        u_sphere = (current_user.role_level or '').replace('agente_', 'admin_')
-        sub_ids_to_delete = []
-        rows = conn.execute('''
-            SELECT s.id, s.responsavel_nivel, u.role_level as u_role_level 
-            FROM submissions s JOIN users u ON s.user_id = u.id 
-            WHERE s.submission_type = 'point'
-        ''').fetchall()
-        for r in rows:
-            r_sphere = (r['responsavel_nivel'] or r['u_role_level'] or '').replace('agente_', 'admin_')
-            if r_sphere == u_sphere:
-                sub_ids_to_delete.append(r['id'])
-        
-        if sub_ids_to_delete:
-            placeholders = ','.join(['?'] * len(sub_ids_to_delete))
-            conn.execute(f"DELETE FROM submissions WHERE id IN ({placeholders})", sub_ids_to_delete)
+    rows = conn.execute('''
+        SELECT s.*, u.role_level as u_role_level, u.municipio as u_municipio, u.uf as u_uf 
+        FROM submissions s 
+        LEFT JOIN users u ON s.user_id = u.id 
+        WHERE s.submission_type = 'point'
+    ''').fetchall()
+
+    deleted_count = 0
+    for r in rows:
+        perms = check_curadoria_permissions(r, current_user)
+        if perms['can_delete']:
+            sub_id = r['id']
+            conn.execute("DELETE FROM blockchain_ledger WHERE submission_id = ?", (sub_id,))
+            conn.execute("DELETE FROM submissions WHERE id = ?", (sub_id,))
+            deleted_count += 1
 
     conn.commit()
     conn.close()
 
-    flash('Pontos de ocorrência da Curadoria excluídos com sucesso.', 'warning')
+    try:
+        import threading
+        threading.Thread(target=sync_with_cloud, daemon=True).start()
+    except Exception:
+        pass
+
+    flash(f'{deleted_count} ocorrências sob sua jurisdição foram removidas.', 'warning')
     return redirect(url_for('curadoria'))
 
 @app.route('/delete_occurrence/<int:sub_id>', methods=['POST'])
@@ -2538,9 +2803,9 @@ def curadoria_delete_all():
 def delete_occurrence(sub_id):
     conn = get_db_connection()
     sub = conn.execute('''
-        SELECT s.*, u.role_level as u_role_level 
+        SELECT s.*, u.role_level as u_role_level, u.municipio as u_municipio, u.uf as u_uf 
         FROM submissions s 
-        JOIN users u ON s.user_id = u.id 
+        LEFT JOIN users u ON s.user_id = u.id 
         WHERE s.id = ?
     ''', (sub_id,)).fetchone()
     
@@ -2549,22 +2814,13 @@ def delete_occurrence(sub_id):
         flash('Ocorrência não encontrada.', 'danger')
         return redirect(url_for('index'))
 
-    is_admin_geral = (current_user.role_level == 'admin_geral')
-    is_gestor = (current_user.role in ['admin', 'org'] or getattr(current_user, 'funcao', 'agente') in ['gestor', 'gestor_agente'])
-    is_owner = (current_user.id == sub['user_id'])
-    
-    sub_sphere = sub['responsavel_nivel'] or sub['u_role_level'] or ''
-    u_sphere = (current_user.role_level or '').replace('agente_', 'admin_')
-    s_sphere = sub_sphere.replace('agente_', 'admin_')
-    is_same_sphere = (u_sphere == s_sphere)
-
-    can_delete = is_admin_geral or (is_gestor and is_same_sphere) or is_owner
-
-    if not can_delete:
+    perms = check_curadoria_permissions(sub, current_user)
+    if not perms['can_delete']:
         conn.close()
-        flash('Acesso Negado: Você só pode excluir ocorrências que você mesmo cadastrou ou da sua esfera de gestão.', 'danger')
+        flash(f'Acesso Negado: Você não possui autorização para excluir este registro. {perms["is_waiting_reason"]}', 'danger')
         return redirect(request.referrer or url_for('index'))
 
+    conn.execute('DELETE FROM blockchain_ledger WHERE submission_id = ?', (sub_id,))
     conn.execute('DELETE FROM submissions WHERE id = ?', (sub_id,))
     conn.commit()
     conn.close()
@@ -2782,20 +3038,24 @@ def apply_database_sync(incoming_data):
                         telefone = COALESCE(?, telefone),
                         matricula = COALESCE(?, matricula),
                         cpf = COALESCE(?, cpf),
-                        funcao = COALESCE(?, funcao)
+                        funcao = COALESCE(?, funcao),
+                        municipio = COALESCE(?, municipio),
+                        uf = COALESCE(?, uf)
                     WHERE id = ?
                 """, (
                     u.get('password_hash'), u.get('role'), u.get('role_level'),
                     u.get('email'), u.get('nome_completo'), u.get('telefone'),
-                    u.get('matricula'), u.get('cpf'), u.get('funcao'), existing['id']
+                    u.get('matricula'), u.get('cpf'), u.get('funcao'),
+                    u.get('municipio'), u.get('uf'), existing['id']
                 ))
             else:
                 conn.execute("""
-                    INSERT INTO users (username, password_hash, role, role_level, email, nome_completo, telefone, matricula, cpf, funcao)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO users (username, password_hash, role, role_level, email, nome_completo, telefone, matricula, cpf, funcao, municipio, uf)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     username, u.get('password_hash') or '', u.get('role', 'user'), u.get('role_level', 'user'),
-                    u.get('email'), u.get('nome_completo'), u.get('telefone'), u.get('matricula'), u.get('cpf'), u.get('funcao', 'agente')
+                    u.get('email'), u.get('nome_completo'), u.get('telefone'), u.get('matricula'), u.get('cpf'),
+                    u.get('funcao', 'agente'), u.get('municipio', 'Angra dos Reis'), u.get('uf', 'RJ')
                 ))
         conn.commit()
 
@@ -2956,7 +3216,12 @@ def admin():
         ).fetchall()
     conn.close()
     
-    return render_template('admin.html', users=users)
+    return render_template(
+        'admin.html',
+        users=users,
+        rj_municipalities=RJ_MUNICIPALITIES,
+        brazil_ufs=BRAZIL_UFS
+    )
 
 @app.route('/admin/create_user', methods=['POST'])
 @login_required
@@ -2976,26 +3241,61 @@ def admin_create_user():
     telefone = request.form.get('telefone', '').strip()
     matricula = request.form.get('matricula', '').strip()
     cpf = request.form.get('cpf', '').strip()
-    
-    funcao_requested = request.form.get('funcao', '').strip()
+    funcao_requested = request.form.get('funcao', 'agente').strip()
+
+    # Jurisdição geográfica
+    municipio_input = request.form.get('municipio', '').strip()
+    uf_input = request.form.get('uf', '').strip().upper()
 
     if current_user.role_level == 'admin_geral':
         selected_level = request.form.get('role_level', 'admin_municipal')
-        if funcao_requested == 'gestor' or 'admin' in selected_level or selected_level in ['admin_geral', 'org']:
-            role = 'admin' if selected_level != 'org' else 'org'
-            role_level = selected_level
-            funcao = 'gestor' if funcao_requested == 'gestor' else 'gestor_agente'
+        if selected_level == 'admin_geral':
+            role = 'admin'
+            role_level = 'admin_geral'
+            funcao = 'gestor_agente'
+            municipio = municipio_input or 'Angra dos Reis'
+            uf = uf_input or 'RJ'
+        elif selected_level == 'org':
+            role = 'org'
+            role_level = 'org'
+            funcao = 'gestor' if funcao_requested == 'gestor' else 'agente'
+            municipio = municipio_input or 'Angra dos Reis'
+            uf = uf_input or 'RJ'
+        elif 'municipal' in selected_level:
+            is_g = (funcao_requested == 'gestor')
+            role = 'admin' if is_g else 'user'
+            role_level = 'admin_municipal' if is_g else 'agente_municipal'
+            funcao = 'gestor' if is_g else 'agente'
+            municipio = municipio_input or 'Angra dos Reis'
+            uf = uf_input or 'RJ'
+        elif 'estadual' in selected_level:
+            is_g = (funcao_requested == 'gestor')
+            role = 'admin' if is_g else 'user'
+            role_level = 'admin_estadual' if is_g else 'agente_estadual'
+            funcao = 'gestor' if is_g else 'agente'
+            municipio = municipio_input or 'Capital Estadual'
+            uf = uf_input or 'RJ'
+        elif 'nacional' in selected_level:
+            is_g = (funcao_requested == 'gestor')
+            role = 'admin' if is_g else 'user'
+            role_level = 'admin_nacional' if is_g else 'agente_nacional'
+            funcao = 'gestor' if is_g else 'agente'
+            municipio = 'Brasília'
+            uf = 'DF'
         else:
             role = 'user'
-            sphere = selected_level.replace('admin_', '').replace('agente_', '')
-            role_level = f'agente_{sphere}' if sphere in ['nacional', 'estadual', 'municipal', 'org'] else 'user'
+            role_level = 'user'
             funcao = 'agente'
+            municipio = municipio_input or 'Angra dos Reis'
+            uf = uf_input or 'RJ'
     else:
-        # Funcionários cadastrados por gestores recebem role = 'user' (funcao = 'agente')
+        # Funcionários cadastrados por gestores recebem a jurisdição do próprio gestor
         sphere = current_user.role_level.replace('admin_', '')
         role_level = f'agente_{sphere}'
         role = 'user'
         funcao = 'agente'
+        municipio = getattr(current_user, 'municipio', 'Angra dos Reis') or 'Angra dos Reis'
+        uf = getattr(current_user, 'uf', 'RJ') or 'RJ'
 
     if not username or not password or not nome_completo or not cpf or not matricula:
         flash('E-mail institucional (Login), Senha inicial, Nome completo, CPF e Matrícula são obrigatórios.', 'warning')
@@ -3041,21 +3341,27 @@ def admin_create_user():
         pwd_hash = generate_password_hash(password)
         try:
             res = conn.execute('''
-                INSERT INTO users (username, password, password_hash, role, role_level, email, nome_completo, telefone, matricula, cpf, funcao)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (username, pwd_hash, pwd_hash, role, role_level, email, nome_completo, telefone, matricula, cpf, funcao))
+                INSERT INTO users (username, password, password_hash, role, role_level, email, nome_completo, telefone, matricula, cpf, funcao, municipio, uf)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (username, pwd_hash, pwd_hash, role, role_level, email, nome_completo, telefone, matricula, cpf, funcao, municipio, uf))
         except Exception:
             conn.rollback()
             res = conn.execute('''
-                INSERT INTO users (username, password_hash, role, role_level, email, nome_completo, telefone, matricula, cpf, funcao)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (username, pwd_hash, role, role_level, email, nome_completo, telefone, matricula, cpf, funcao))
+                INSERT INTO users (username, password_hash, role, role_level, email, nome_completo, telefone, matricula, cpf, funcao, municipio, uf)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (username, pwd_hash, role, role_level, email, nome_completo, telefone, matricula, cpf, funcao, municipio, uf))
         conn.commit()
         new_id = getattr(res, 'lastrowid', None)
         conn.close()
 
+        try:
+            import threading
+            threading.Thread(target=sync_with_cloud, daemon=True).start()
+        except Exception:
+            pass
+
         id_str = f" (ID #{new_id})" if new_id else ""
-        flash(f'Novo agente "{nome_completo}"{id_str} cadastrado com sucesso com o login de e-mail "{username}"!', 'success')
+        flash(f'Novo agente "{nome_completo}"{id_str} cadastrado com sucesso para {municipio}/{uf} com login "{username}"!', 'success')
     except Exception as e:
         if conn:
             try:
