@@ -80,6 +80,16 @@ class DBWrapper:
             pg_query = query.replace('?', '%s')
             cursor = self.conn.cursor()
             cursor.execute(pg_query, params)
+            if query.strip().upper().startswith("INSERT INTO") and "RETURNING" not in query.upper():
+                try:
+                    c2 = self.conn.cursor()
+                    c2.execute("SELECT LASTVAL()")
+                    row = c2.fetchone()
+                    if row:
+                        cursor.lastrowid = row[0]
+                    c2.close()
+                except Exception:
+                    pass
             return cursor
         else:
             return self.conn.execute(query, params)
@@ -1596,7 +1606,14 @@ def upload_point():
         email_contato,
         client_ip
     ))
-    sub_id = cur.lastrowid
+    sub_id = getattr(cur, 'lastrowid', None)
+    if not sub_id:
+        try:
+            r_id = conn.execute("SELECT id FROM submissions ORDER BY id DESC LIMIT 1").fetchone()
+            if r_id:
+                sub_id = r_id['id'] if hasattr(r_id, '__getitem__') else r_id[0]
+        except Exception:
+            pass
     conn.commit()
 
     # Notarização imediata em Blockchain + Geração do Primeiro QR Code
@@ -2643,10 +2660,15 @@ def curadoria_action(sub_id):
             current_user.role_level or current_user.role,
             sub_id
         ))
+        conn.commit()
         
-        if sub_dict.get('submission_type') == 'layer':
-            conn.execute('INSERT INTO layers (name, filename, category, is_active) VALUES (?, ?, ?, 1)',
-                         (submission['title'], submission['filename'], 'Contribuição de Usuários'))
+        if sub_dict.get('submission_type') == 'layer' and submission['filename']:
+            try:
+                conn.execute('INSERT INTO layers (name, filename, category, is_active) VALUES (?, ?, ?, 1)',
+                             (submission['title'], submission['filename'], 'Contribuição de Usuários'))
+                conn.commit()
+            except Exception as e_lay:
+                print("Aviso ao inserir layer:", e_lay)
                          
         # Notarização Criptográfica de Aprovação no Blockchain (Gera novo bloco e novo QR Code)
         try:
@@ -2734,9 +2756,12 @@ def curadoria_approve_all():
                 current_user.role_level or current_user.role,
                 sub_id
             ))
-            if r['submission_type'] == 'layer':
-                conn.execute('INSERT INTO layers (name, filename, category, is_active) VALUES (?, ?, ?, 1)',
-                             (r['title'], r['filename'], 'Contribuição de Usuários'))
+            if r.get('submission_type') == 'layer' and r.get('filename'):
+                try:
+                    conn.execute('INSERT INTO layers (name, filename, category, is_active) VALUES (?, ?, ?, 1)',
+                                 (r['title'], r['filename'], 'Contribuição de Usuários'))
+                except Exception as e_lay:
+                    print("Aviso ao inserir layer em lote:", e_lay)
             try:
                 blockchain_engine.notarize_record(
                     conn,

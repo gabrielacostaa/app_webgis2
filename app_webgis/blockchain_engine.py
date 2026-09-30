@@ -22,7 +22,7 @@ def calculate_data_hash(record_dict):
         'clima_precipitacao_evento', 'clima_precipitacao_mensal',
         'n_mortos', 'n_feridos', 'soc_n_familias', 'econ_custo_total', 'amb_tipo_impacto',
         'telefone_contato', 'email_contato', 'ip_origem',
-        'esfera_responsavel', 'motivo_escalacao'
+        'esfera_responsavel', 'motivo_escalacao', 'status'
     ]
     
     clean_dict = {}
@@ -89,8 +89,48 @@ def notarize_record(conn, submission_id, curator_user=None, action_type='INSERCA
         block_index = int(last_block['block_index']) + 1
         previous_hash = last_block['block_hash']
     else:
-        block_index = 1
-        previous_hash = GENESIS_HASH
+        if action_type != 'INSERCAO_INICIAL':
+            # Cria automaticamente o Bloco #1 (Registro inicial dos dados) para garantir rastreabilidade completa
+            init_iso = rec_dict.get('created_at') or rec_dict.get('timestamp') or datetime.datetime.utcnow().isoformat()
+            if hasattr(init_iso, 'isoformat'):
+                init_iso = init_iso.isoformat()
+            init_iso = str(init_iso) + "Z" if not str(init_iso).endswith("Z") else str(init_iso)
+            init_curator = {
+                'nome': rec_dict.get('responsavel_nome') or 'Declarante Comunitário',
+                'cpf': rec_dict.get('responsavel_cpf') or '000.000.000-00',
+                'matricula': rec_dict.get('responsavel_matricula') or 'N/A',
+                'nivel': rec_dict.get('responsavel_nivel') or 'Visitante'
+            }
+            init_ip = rec_dict.get('ip_origem') or '127.0.0.1'
+            init_qr = f"qr_sub_{submission_id}_blk_1.png"
+            init_block_hash = calculate_block_hash(1, init_iso, GENESIS_HASH, data_hash, init_curator, init_ip, 'INSERCAO_INICIAL')
+            
+            try:
+                target_host = host_url
+                if not host_url or '127.0.0.1' in host_url or 'localhost' in host_url:
+                    target_host = os.environ.get('CLOUD_TRACKING_URL', 'https://movmassa.onrender.com')
+                tracking_url = f"{target_host.rstrip('/')}/blockchain/track/{submission_id}"
+                generate_block_qrcode(tracking_url, init_qr, upload_folder)
+            except Exception:
+                pass
+
+            conn.execute('''
+                INSERT INTO blockchain_ledger (
+                    submission_id, block_index, timestamp, data_hash, previous_hash, block_hash,
+                    curator_nome, curator_cpf, curator_matricula, curator_nivel,
+                    ip_origem, action_type, changes_summary, qrcode_filename
+                ) VALUES (?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'INSERCAO_INICIAL', ?, ?)
+            ''', (
+                submission_id, init_iso, data_hash, GENESIS_HASH, init_block_hash,
+                init_curator['nome'], init_curator['cpf'], init_curator['matricula'], init_curator['nivel'],
+                init_ip, 'Registro inicial dos dados da ocorrência no Geoportal (Auditoria e Contato gravados)', init_qr
+            ))
+            conn.commit()
+            block_index = 2
+            previous_hash = init_block_hash
+        else:
+            block_index = 1
+            previous_hash = GENESIS_HASH
         
     timestamp_iso = datetime.datetime.utcnow().isoformat() + "Z"
     
